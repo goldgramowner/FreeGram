@@ -44,6 +44,19 @@ def init_db():
             c.execute(sql)
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_nft_username_uq ON users (LOWER(nft_username)) WHERE nft_username IS NOT NULL")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_virtual_number_uq ON users (virtual_number) WHERE virtual_number IS NOT NULL")
+        c.execute("""CREATE TABLE IF NOT EXISTS chats (
+            id BIGSERIAL PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('direct','group','channel')),
+            title TEXT NOT NULL DEFAULT '', direct_key TEXT UNIQUE,
+            owner_user_id BIGINT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS chat_members (
+            chat_id BIGINT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            joined_at TEXT NOT NULL, PRIMARY KEY(chat_id,user_id))""")
+        c.execute("""CREATE TABLE IF NOT EXISTS messages (
+            id BIGSERIAL PRIMARY KEY, chat_id BIGINT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+            user_id BIGINT NOT NULL REFERENCES users(id), body TEXT NOT NULL,
+            created_at TEXT NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS messages_chat_id_idx ON messages(chat_id,id)")
 
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
@@ -75,6 +88,14 @@ class OwnerAction(BaseModel):
     virtual_id: str = Field(min_length=3, max_length=80)
     action: str
     value: str | int | None = None
+class ChatCreate(BaseModel):
+    kind: str = Field(default="direct", pattern="^(direct|group|channel)$")
+    title: str | None = Field(default=None, max_length=80)
+    username: str | None = Field(default=None, min_length=5, max_length=24)
+
+class MessageCreate(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
 
 @app.on_event("startup")
 def startup():
@@ -173,6 +194,90 @@ def me(authorization: str = Header(default="")):
     if not user or not user["verified"] or user["banned"]:
         raise HTTPException(401, "Invalid session")
     return {"ok": True, **user}
+
+
+def authenticated_user(authorization):
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Authorization required")
+    with connect() as c:
+        user = c.execute("SELECT id, virtual_id, username, banned, verified FROM users WHERE token_hash=%s",
+                         (digest(authorization[7:]),)).fetchone()
+    if not user or not user["verified"] or user["banned"]:
+        raise HTTPException(401, "Invalid session")
+    return user
+
+@app.get("/v1/chats")
+def list_chats(authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    with connect() as c:
+        rows = c.execute("""SELECT ch.id,ch.kind,ch.title,ch.created_at,
+            (SELECT m.body FROM messages m WHERE m.chat_id=ch.id ORDER BY m.id DESC LIMIT 1) AS last_message,
+            (SELECT u.username FROM chat_members cm JOIN users u ON u.id=cm.user_id
+             WHERE cm.chat_id=ch.id AND cm.user_id<>%s LIMIT 1) AS other_username
+            FROM chats ch JOIN chat_members mine ON mine.chat_id=ch.id
+            WHERE mine.user_id=%s ORDER BY ch.id DESC""", (user["id"],user["id"])).fetchall()
+    return {"ok": True, "chats": rows}
+
+@app.post("/v1/chats")
+def create_chat(data: ChatCreate, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    now = datetime.now(timezone.utc).isoformat()
+    with connect() as c:
+        if data.kind == "direct":
+            if not data.username:
+                raise HTTPException(400, "username required for direct chat")
+            other = c.execute("SELECT id,username FROM users WHERE LOWER(username)=LOWER(%s) AND verified=1 AND banned=0",
+                              (data.username.strip(),)).fetchone()
+            if not other:
+                raise HTTPException(404, "User not found")
+            if other["id"] == user["id"]:
+                raise HTTPException(400, "Cannot create a chat with yourself")
+            key = ":".join(map(str, sorted([user["id"], other["id"]])))
+            chat = c.execute("SELECT id FROM chats WHERE direct_key=%s", (key,)).fetchone()
+            if chat:
+                return {"ok": True, "chat_id": chat["id"], "existing": True}
+            cur = c.execute("""INSERT INTO chats(kind,title,direct_key,owner_user_id,created_at)
+                VALUES('direct','',%s,%s,%s) RETURNING id""",(key,user["id"],now))
+            chat_id=cur.fetchone()["id"]
+            c.execute("INSERT INTO chat_members(chat_id,user_id,joined_at) VALUES(%s,%s,%s),(%s,%s,%s)",
+                      (chat_id,user["id"],now,chat_id,other["id"],now))
+        else:
+            title=(data.title or "").strip()
+            if len(title)<1:
+                raise HTTPException(400, "Chat title required")
+            cur=c.execute("""INSERT INTO chats(kind,title,owner_user_id,created_at)
+                VALUES(%s,%s,%s,%s) RETURNING id""",(data.kind,title,user["id"],now))
+            chat_id=cur.fetchone()["id"]
+            c.execute("INSERT INTO chat_members(chat_id,user_id,joined_at) VALUES(%s,%s,%s)",
+                      (chat_id,user["id"],now))
+    return {"ok": True, "chat_id": chat_id, "existing": False}
+
+@app.get("/v1/chats/{chat_id}/messages")
+def get_messages(chat_id: int, authorization: str = Header(default=""), after_id: int = 0):
+    user=authenticated_user(authorization)
+    with connect() as c:
+        member=c.execute("SELECT 1 FROM chat_members WHERE chat_id=%s AND user_id=%s",(chat_id,user["id"])).fetchone()
+        if not member: raise HTTPException(404,"Chat not found")
+        rows=c.execute("""SELECT m.id,m.body,m.created_at,u.username,u.virtual_id
+            FROM messages m JOIN users u ON u.id=m.user_id
+            WHERE m.chat_id=%s AND m.id>%s ORDER BY m.id ASC LIMIT 200""",(chat_id,after_id)).fetchall()
+    return {"ok":True,"messages":rows}
+
+@app.post("/v1/chats/{chat_id}/messages")
+def send_message(chat_id: int, data: MessageCreate, authorization: str = Header(default="")):
+    user=authenticated_user(authorization)
+    body=data.text.strip()
+    if not body: raise HTTPException(400,"Message cannot be empty")
+    now=datetime.now(timezone.utc).isoformat()
+    with connect() as c:
+        chat=c.execute("SELECT kind,owner_user_id FROM chats WHERE id=%s",(chat_id,)).fetchone()
+        member=c.execute("SELECT 1 FROM chat_members WHERE chat_id=%s AND user_id=%s",(chat_id,user["id"])).fetchone()
+        if not chat or not member: raise HTTPException(404,"Chat not found")
+        if chat["kind"]=="channel" and chat["owner_user_id"]!=user["id"]:
+            raise HTTPException(403,"Only channel owner can post")
+        row=c.execute("""INSERT INTO messages(chat_id,user_id,body,created_at)
+            VALUES(%s,%s,%s,%s) RETURNING id,body,created_at""",(chat_id,user["id"],body,now)).fetchone()
+    return {"ok":True,"message":{**row,"username":user["username"],"virtual_id":user["virtual_id"]}}
 
 @app.get("/v1/owner/status")
 def owner_status(x_owner_secret: str = Header(default="")):

@@ -120,15 +120,109 @@ public class FreeGramEntryActivity extends Activity {
     }
     private void signedIn(String u,String id) {
         busy=false;
-        LinearLayout l=root(); l.setGravity(Gravity.CENTER);
-        l.addView(label("FreeGram",32,Color.rgb(35,111,220)));
-        l.addView(label("Вы вошли как @"+u,20,Color.DKGRAY));
-        l.addView(label(id,15,Color.GRAY));
-        TextView note=label("Аккаунт FreeGram авторизован. Независимые чаты и сообщения ещё подключаются.",14,Color.DKGRAY);
-        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2); p.topMargin=24; l.addView(note,p);
-        Button out=new Button(this); out.setText("Выйти");
+        showChats(u,id);
+    }
+    private void showChats(String u,String id) {
+        LinearLayout l=root();
+        l.addView(label("FreeGram",30,Color.rgb(35,111,220)));
+        l.addView(label("@"+u+"  •  "+id,14,Color.DKGRAY));
+        Button direct=new Button(this); direct.setText("Написать пользователю");
+        direct.setOnClickListener(v->promptDirect(u,id)); l.addView(direct);
+        Button group=new Button(this); group.setText("Создать группу");
+        group.setOnClickListener(v->promptRoom("group",u,id)); l.addView(group);
+        Button channel=new Button(this); channel.setText("Создать канал");
+        channel.setOnClickListener(v->promptRoom("channel",u,id)); l.addView(channel);
+        TextView info=label("Ваши чаты",18,Color.DKGRAY);
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.topMargin=12;l.addView(info,p);
+        LinearLayout list=new LinearLayout(this);list.setOrientation(1);l.addView(list,new LinearLayout.LayoutParams(-1,-2));
+        Button refresh=new Button(this);refresh.setText("Обновить");refresh.setOnClickListener(v->loadChats(list,u,id));l.addView(refresh);
+        Button out=new Button(this);out.setText("Выйти");
         out.setOnClickListener(v->{getSharedPreferences("freegram_auth",0).edit().clear().apply();showAuth();});
-        l.addView(out); setContentView(l);
+        l.addView(out);setContentView(l);loadChats(list,u,id);
+    }
+    private String token(){return getSharedPreferences("freegram_auth",0).getString("token","");}
+    private void loadChats(LinearLayout list,String u,String id) {
+        list.removeAllViews();
+        list.addView(label("Загружаю чаты...",14,Color.GRAY));
+        io.execute(()->{
+            try {
+                JSONObject res=request("/v1/chats","GET",null,token());
+                org.json.JSONArray chats=res.optJSONArray("chats");
+                main.post(()->{
+                    list.removeAllViews();
+                    if(chats==null||chats.length()==0){list.addView(label("Пока нет чатов. Напишите пользователю по логину.",14,Color.GRAY));return;}
+                    for(int i=0;i<chats.length();i++){
+                        JSONObject ch=chats.optJSONObject(i); if(ch==null)continue;
+                        final int chatId=ch.optInt("id");
+                        String kind=ch.optString("kind","chat");
+                        String title=ch.optString("title","");
+                        if(title.isEmpty())title="@"+ch.optString("other_username","личный чат");
+                        String preview=ch.optString("last_message","Нет сообщений");
+                        Button item=new Button(this);item.setText(title+"\n"+preview);
+                        item.setOnClickListener(v->openChat(chatId,title,u,id));
+                        list.addView(item,new LinearLayout.LayoutParams(-1,-2));
+                    }
+                });
+            } catch(Exception e){main.post(()->{list.removeAllViews();list.addView(label("Ошибка загрузки: "+e.getMessage(),14,Color.RED));});}
+        });
+    }
+    private void promptDirect(String u,String id) {
+        EditText input=new EditText(this);input.setSingleLine(true);input.setHint("Логин пользователя");
+        new android.app.AlertDialog.Builder(this).setTitle("Новый чат").setView(input)
+            .setNegativeButton("Отмена",null).setPositiveButton("Создать",(d,w)->{
+                String name=input.getText().toString().trim();
+                io.execute(()->{try{
+                    JSONObject data=new JSONObject();data.put("kind","direct");data.put("username",name);
+                    JSONObject res=request("/v1/chats","POST",data,token());
+                    int chatId=res.getInt("chat_id");main.post(()->openChat(chatId,"@"+name,u,id));
+                }catch(Exception e){main.post(()->android.widget.Toast.makeText(this,"Ошибка: "+e.getMessage(),android.widget.Toast.LENGTH_LONG).show());}});
+            }).show();
+    }
+    private void promptRoom(String kind,String u,String id) {
+        EditText input=new EditText(this);input.setSingleLine(true);input.setHint(kind.equals("channel")?"Название канала":"Название группы");
+        new android.app.AlertDialog.Builder(this).setTitle(kind.equals("channel")?"Новый канал":"Новая группа").setView(input)
+            .setNegativeButton("Отмена",null).setPositiveButton("Создать",(d,w)->{
+                String title=input.getText().toString().trim();
+                io.execute(()->{try{
+                    JSONObject data=new JSONObject();data.put("kind",kind);data.put("title",title);
+                    JSONObject res=request("/v1/chats","POST",data,token());
+                    int chatId=res.getInt("chat_id");main.post(()->openChat(chatId,title,u,id));
+                }catch(Exception e){main.post(()->android.widget.Toast.makeText(this,"Ошибка: "+e.getMessage(),android.widget.Toast.LENGTH_LONG).show());}});
+            }).show();
+    }
+    private void openChat(int chatId,String title,String u,String id) {
+        LinearLayout l=root();
+        Button back=new Button(this);back.setText("← Чаты");back.setOnClickListener(v->showChats(u,id));l.addView(back);
+        l.addView(label(title,22,Color.rgb(35,111,220)));
+        ScrollView scroll=new ScrollView(this);LinearLayout messages=new LinearLayout(this);messages.setOrientation(1);
+        scroll.addView(messages);l.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        EditText input=new EditText(this);input.setHint("Сообщение");l.addView(input);
+        Button send=new Button(this);send.setText("Отправить");l.addView(send);
+        setContentView(l);loadMessages(chatId,messages);
+        send.setOnClickListener(v->{
+            String body=input.getText().toString().trim();if(body.isEmpty())return;
+            input.setText("");io.execute(()->{try{
+                JSONObject data=new JSONObject();data.put("text",body);
+                request("/v1/chats/"+chatId+"/messages","POST",data,token());
+                main.post(()->loadMessages(chatId,messages));
+            }catch(Exception e){main.post(()->android.widget.Toast.makeText(this,"Не отправлено: "+e.getMessage(),android.widget.Toast.LENGTH_LONG).show());}});
+        });
+    }
+    private void loadMessages(int chatId,LinearLayout target) {
+        io.execute(()->{try{
+            JSONObject res=request("/v1/chats/"+chatId+"/messages","GET",null,token());
+            org.json.JSONArray arr=res.optJSONArray("messages");
+            main.post(()->{
+                target.removeAllViews();
+                if(arr==null||arr.length()==0){target.addView(label("Сообщений пока нет",14,Color.GRAY));return;}
+                for(int i=0;i<arr.length();i++){
+                    JSONObject m=arr.optJSONObject(i);if(m==null)continue;
+                    String line="@"+m.optString("username","user")+": "+m.optString("body","");
+                    TextView t=label(line,15,Color.DKGRAY);t.setGravity(Gravity.LEFT);t.setPadding(8,12,8,12);
+                    target.addView(t);
+                }
+            });
+        }catch(Exception e){main.post(()->android.widget.Toast.makeText(this,"Ошибка сообщений: "+e.getMessage(),android.widget.Toast.LENGTH_LONG).show());}});
     }
     @Override protected void onDestroy(){super.onDestroy();io.shutdownNow();}
 }

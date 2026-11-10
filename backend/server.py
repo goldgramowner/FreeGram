@@ -1,6 +1,7 @@
 import os
 import secrets
 import hashlib
+import re
 from datetime import datetime, timezone, timedelta
 
 import psycopg
@@ -29,6 +30,10 @@ def init_db():
             virtual_id TEXT UNIQUE NOT NULL, otp_salt TEXT, otp_hash TEXT,
             otp_expires TEXT, verified INTEGER DEFAULT 0, token_hash TEXT,
             created_at TEXT NOT NULL)""")
+        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT")
+        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_salt TEXT")
+        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_username_uq ON users (LOWER(username)) WHERE username IS NOT NULL")
         for sql in [
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS banned INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS stars BIGINT NOT NULL DEFAULT 1000",
@@ -54,6 +59,14 @@ def require_owner(secret):
 class Registration(BaseModel):
     telegram_id: int
 
+class DirectRegistration(BaseModel):
+    username: str = Field(min_length=5, max_length=24)
+    password: str = Field(min_length=8, max_length=128)
+
+class DirectLogin(BaseModel):
+    username: str = Field(min_length=5, max_length=24)
+    password: str = Field(min_length=8, max_length=128)
+
 class Verification(BaseModel):
     virtual_id: str
     code: str
@@ -70,6 +83,49 @@ def startup():
 @app.get("/health")
 def health():
     return {"project": "FreeGram", "status": "online", "api": "auth-v1", "database": "postgresql"}
+
+def password_digest(salt, password):
+    return hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 240000).hex()
+
+def issue_session(c, user_id):
+    token = secrets.token_urlsafe(40)
+    c.execute("UPDATE users SET token_hash=%s, verified=1 WHERE id=%s", (digest(token), user_id))
+    return token
+
+@app.post("/v1/auth/register")
+def direct_register(data: DirectRegistration):
+    username = data.username.strip().lower()
+    if not re.fullmatch(r"[a-z0-9_]{5,24}", username):
+        raise HTTPException(400, "Username: 5-24 латинских букв, цифр или _")
+    salt = secrets.token_hex(16)
+    now = datetime.now(timezone.utc).isoformat()
+    virtual_id = "FG-" + secrets.token_hex(5).upper()
+    with connect() as c:
+        if c.execute("SELECT 1 FROM users WHERE LOWER(username)=LOWER(%s)", (username,)).fetchone():
+            raise HTTPException(409, "Username already taken")
+        try:
+            cur = c.execute("""INSERT INTO users
+                (virtual_id, verified, token_hash, created_at, username, password_salt, password_hash)
+                VALUES (%s,1,NULL,%s,%s,%s,%s) RETURNING id""",
+                (virtual_id, now, username, salt, password_digest(salt, data.password)))
+        except psycopg.errors.UniqueViolation:
+            raise HTTPException(409, "Username already taken")
+        token = issue_session(c, cur.fetchone()["id"])
+    return {"ok": True, "virtual_id": virtual_id, "username": username,
+            "access_token": token, "token_type": "Bearer"}
+
+@app.post("/v1/auth/login")
+def direct_login(data: DirectLogin):
+    username = data.username.strip().lower()
+    with connect() as c:
+        user = c.execute("SELECT id, virtual_id, password_salt, password_hash, banned FROM users WHERE LOWER(username)=LOWER(%s)", (username,)).fetchone()
+        if not user or not user["password_hash"] or not secrets.compare_digest(password_digest(user["password_salt"], data.password), user["password_hash"]):
+            raise HTTPException(401, "Неверный логин или пароль")
+        if user["banned"]:
+            raise HTTPException(403, "Account banned")
+        token = issue_session(c, user["id"])
+    return {"ok": True, "virtual_id": user["virtual_id"], "username": username,
+            "access_token": token, "token_type": "Bearer"}
 
 @app.post("/v1/registrations")
 def register(data: Registration, x_bot_secret: str = Header(default="")):
@@ -111,7 +167,7 @@ def me(authorization: str = Header(default="")):
     if not authorization.startswith("Bearer "):
         raise HTTPException(401, "Authorization required")
     with connect() as c:
-        user = c.execute("""SELECT virtual_id, telegram_id, verified, created_at,
+        user = c.execute("""SELECT virtual_id, username, telegram_id, verified, created_at,
             banned, stars, label, nft_username, virtual_number
             FROM users WHERE token_hash=%s""", (digest(authorization[7:]),)).fetchone()
     if not user or not user["verified"] or user["banned"]:

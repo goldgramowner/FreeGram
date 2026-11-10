@@ -199,6 +199,9 @@ def main():
     ).start()
 
     log.info("FreeGram Bot and HTTP server starting")
+    # Python 3.14 no longer creates a main-thread event loop automatically.
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     telegram_app.run_polling()
 
 

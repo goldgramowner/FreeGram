@@ -123,22 +123,69 @@ public class FreeGramEntryActivity extends Activity {
         showChats(u,id);
     }
     private void showChats(String u,String id) {
-        LinearLayout l=root();
-        l.addView(label("FreeGram",30,Color.rgb(35,111,220)));
-        l.addView(label("@"+u+"  •  "+id,14,Color.DKGRAY));
-        Button direct=new Button(this); direct.setText("Написать пользователю");
-        direct.setOnClickListener(v->promptDirect(u,id)); l.addView(direct);
-        Button group=new Button(this); group.setText("Создать группу");
-        group.setOnClickListener(v->promptRoom("group",u,id)); l.addView(group);
-        Button channel=new Button(this); channel.setText("Создать канал");
-        channel.setOnClickListener(v->promptRoom("channel",u,id)); l.addView(channel);
-        TextView info=label("Ваши чаты",18,Color.DKGRAY);
-        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.topMargin=12;l.addView(info,p);
-        LinearLayout list=new LinearLayout(this);list.setOrientation(1);l.addView(list,new LinearLayout.LayoutParams(-1,-2));
-        Button refresh=new Button(this);refresh.setText("Обновить");refresh.setOnClickListener(v->loadChats(list,u,id));l.addView(refresh);
-        Button out=new Button(this);out.setText("Выйти");
-        out.setOnClickListener(v->{getSharedPreferences("freegram_auth",0).edit().clear().apply();showAuth();});
-        l.addView(out);setContentView(l);loadChats(list,u,id);
+        LinearLayout page=root(); page.setPadding(0,0,0,0); page.setBackgroundColor(Color.WHITE);
+        LinearLayout header=new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL); header.setPadding(18,14,18,14);
+        TextView brand=label("FreeGram",25,Color.rgb(35,111,220)); brand.setGravity(Gravity.LEFT|Gravity.CENTER_VERTICAL);
+        header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
+        Button compose=new Button(this); compose.setText("+"); compose.setOnClickListener(v->promptDirect(u,id)); header.addView(compose);
+        page.addView(header,new LinearLayout.LayoutParams(-1,-2));
+        View line=new View(this); line.setBackgroundColor(Color.rgb(225,230,238)); page.addView(line,new LinearLayout.LayoutParams(-1,1));
+        LinearLayout content=new LinearLayout(this); content.setOrientation(1); content.setPadding(16,12,16,8);
+        TextView heading=label("Все чаты",22,Color.BLACK); heading.setGravity(Gravity.LEFT); content.addView(heading);
+        TextView account=label("@"+u+"  •  "+id,13,Color.GRAY); account.setGravity(Gravity.LEFT); content.addView(account);
+        LinearLayout list=new LinearLayout(this); list.setOrientation(1);
+        ScrollView scroll=new ScrollView(this); scroll.addView(list);
+        content.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        page.addView(content,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout nav=new LinearLayout(this); nav.setGravity(Gravity.CENTER); nav.setBackgroundColor(Color.rgb(248,249,252));
+        addNav(nav,"Чаты",()->showChats(u,id)); addNav(nav,"Контакты",()->showContacts(u,id));
+        addNav(nav,"Профиль",()->showProfile(u,id)); addNav(nav,"Настройки",()->showSettings(u,id));
+        page.addView(nav,new LinearLayout.LayoutParams(-1,58));
+        setContentView(page); loadChats(list,u,id);
+    }
+    private void addNav(LinearLayout nav,String title,Runnable action) {
+        Button b=new Button(this); b.setText(title); b.setTextSize(11); b.setAllCaps(false);
+        b.setOnClickListener(v->action.run()); nav.addView(b,new LinearLayout.LayoutParams(0,-1,1));
+    }
+    private void showContacts(String u,String id) {
+        LinearLayout page=root(); page.setPadding(0,0,0,0); page.setBackgroundColor(Color.WHITE);
+        page.addView(label("Контакты",24,Color.BLACK));
+        page.addView(label("Найти пользователя FreeGram можно по логину",14,Color.GRAY));
+        Button search=new Button(this); search.setText("Найти по логину");
+        search.setOnClickListener(v->promptDirect(u,id)); page.addView(search);
+        page.addView(new View(this),new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout nav=new LinearLayout(this); addNav(nav,"Чаты",()->showChats(u,id));
+        addNav(nav,"Контакты",()->showContacts(u,id)); addNav(nav,"Профиль",()->showProfile(u,id));
+        addNav(nav,"Настройки",()->showSettings(u,id)); page.addView(nav,new LinearLayout.LayoutParams(-1,58));
+        setContentView(page);
+    }
+    private void showProfile(String u,String id) {
+        LinearLayout page=root(); page.setPadding(0,0,0,0); page.setBackgroundColor(Color.WHITE);
+        page.addView(label("Мой профиль",24,Color.BLACK));
+        TextView avatar=label((u.isEmpty()?"F":u.substring(0,1).toUpperCase()),34,Color.WHITE);
+        avatar.setBackgroundColor(Color.rgb(35,111,220));
+        LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(84,84); ap.topMargin=22; ap.gravity=Gravity.CENTER;
+        page.addView(avatar,ap);
+        page.addView(label("@"+u,20,Color.BLACK));
+        page.addView(label(id,14,Color.GRAY));
+        page.addView(label("FreeGram ID",12,Color.GRAY));
+        page.addView(new View(this),new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout nav=new LinearLayout(this); addNav(nav,"Чаты",()->showChats(u,id));
+        addNav(nav,"Контакты",()->showContacts(u,id)); addNav(nav,"Профиль",()->showProfile(u,id));
+        addNav(nav,"Настройки",()->showSettings(u,id)); page.addView(nav,new LinearLayout.LayoutParams(-1,58));
+        setContentView(page);
+    }
+    private void showSettings(String u,String id) {
+        LinearLayout page=root(); page.setPadding(0,0,0,0); page.setBackgroundColor(Color.WHITE);
+        page.addView(label("Настройки",24,Color.BLACK));
+        Button logout=new Button(this); logout.setText("Выйти из аккаунта");
+        logout.setOnClickListener(v->{getSharedPreferences("freegram_auth",0).edit().clear().apply();showAuth();});
+        page.addView(logout);
+        page.addView(new View(this),new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout nav=new LinearLayout(this); addNav(nav,"Чаты",()->showChats(u,id));
+        addNav(nav,"Контакты",()->showContacts(u,id)); addNav(nav,"Профиль",()->showProfile(u,id));
+        addNav(nav,"Настройки",()->showSettings(u,id)); page.addView(nav,new LinearLayout.LayoutParams(-1,58));
+        setContentView(page);
     }
     private String token(){return getSharedPreferences("freegram_auth",0).getString("token","");}
     private void loadChats(LinearLayout list,String u,String id) {

@@ -4,7 +4,10 @@ import asyncio
 import logging
 import urllib.request
 import urllib.error
+import threading
 
+import uvicorn
+from fastapi import FastAPI
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -19,9 +22,28 @@ OWNER_API_SECRET = os.environ["OWNER_API_SECRET"]
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("freegram-bot")
 
+health_app = FastAPI()
+
+
+@health_app.get("/")
+@health_app.get("/health")
+async def health():
+    return {"project": "FreeGram Bot", "status": "online"}
+
+
+def run_http_server():
+    port = int(os.environ.get("PORT", "10000"))
+    uvicorn.run(
+        health_app,
+        host="0.0.0.0",
+        port=port,
+        log_level="info"
+    )
+
 
 def api_request(path, method="GET", data=None, secret_name=None):
     headers = {"Content-Type": "application/json"}
+
     if secret_name == "bot":
         headers["X-Bot-Secret"] = BOT_API_SECRET
     elif secret_name == "owner":
@@ -39,10 +61,7 @@ def api_request(path, method="GET", data=None, secret_name=None):
         with urllib.request.urlopen(req, timeout=25) as response:
             return json.loads(response.read().decode())
     except urllib.error.HTTPError as e:
-        try:
-            detail = e.read().decode()
-        except Exception:
-            detail = str(e)
+        detail = e.read().decode()
         raise RuntimeError(f"API HTTP {e.code}: {detail}")
     except Exception as e:
         raise RuntimeError(f"API connection error: {e}")
@@ -50,14 +69,23 @@ def api_request(path, method="GET", data=None, secret_name=None):
 
 def main_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🆔 Получить FreeGram ID", callback_data="get_id")]
+        [InlineKeyboardButton(
+            "🆔 Получить FreeGram ID",
+            callback_data="get_id"
+        )]
     ])
 
 
 def owner_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📊 Статус FreeGram", callback_data="owner_status")],
-        [InlineKeyboardButton("ℹ️ Команды", callback_data="owner_help")]
+        [InlineKeyboardButton(
+            "📊 Статус FreeGram",
+            callback_data="owner_status"
+        )],
+        [InlineKeyboardButton(
+            "ℹ️ Команды",
+            callback_data="owner_help"
+        )]
     ])
 
 
@@ -71,6 +99,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+
     if not user or user.id != OWNER_TELEGRAM_ID:
         await update.message.reply_text("⛔ Нет доступа.")
         return
@@ -87,7 +116,10 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = query.from_user
 
     if query.data == "get_id":
-        await query.edit_message_text("⏳ Запрашиваю регистрацию у FreeGram API...")
+        await query.edit_message_text(
+            "⏳ Запрашиваю регистрацию у FreeGram API..."
+        )
+
         try:
             result = await asyncio.to_thread(
                 api_request,
@@ -96,14 +128,17 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 {"telegram_id": user.id},
                 "bot"
             )
+
             await query.edit_message_text(
                 "✅ Регистрация FreeGram создана!\n\n"
                 f"🆔 FreeGram ID: {result['virtual_id']}\n"
                 f"🔐 Одноразовый код: {result['code']}\n\n"
                 "Код действует 10 минут.\n"
-                "Используй его для входа после подключения регистрации в приложении."
+                "Используй его для входа после подключения "
+                "регистрации в приложении."
             )
-        except Exception as e:
+
+        except Exception:
             log.exception("Registration API error")
             await query.edit_message_text(
                 "❌ Не удалось создать регистрацию.\n"
@@ -118,14 +153,20 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "owner_status":
         try:
             result = await asyncio.to_thread(
-                api_request, "/v1/owner/status", "GET", None, "owner"
+                api_request,
+                "/v1/owner/status",
+                "GET",
+                None,
+                "owner"
             )
+
             await query.edit_message_text(
                 "🔐 FreeGram Owner Panel\n\n"
                 f"👥 Всего аккаунтов: {result['total_users']}\n"
                 f"✅ Подтверждено: {result['verified_users']}",
                 reply_markup=owner_keyboard()
             )
+
         except Exception:
             log.exception("Owner status error")
             await query.edit_message_text(
@@ -139,18 +180,26 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/owner — открыть Owner Panel\n"
             "/start — главное меню\n\n"
             "Проверка аккаунтов уже подключена к API. "
-            "Управление метками, Stars и номерами добавим следующим этапом.",
+            "Управление метками, Stars и номерами добавим "
+            "следующим этапом.",
             reply_markup=owner_keyboard()
         )
 
 
 def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("owner", owner))
-    app.add_handler(CallbackQueryHandler(on_button))
-    log.info("FreeGram Auth Bot starting")
-    app.run_polling()
+    telegram_app = Application.builder().token(BOT_TOKEN).build()
+
+    telegram_app.add_handler(CommandHandler("start", start))
+    telegram_app.add_handler(CommandHandler("owner", owner))
+    telegram_app.add_handler(CallbackQueryHandler(on_button))
+
+    threading.Thread(
+        target=run_http_server,
+        daemon=True
+    ).start()
+
+    log.info("FreeGram Bot and HTTP server starting")
+    telegram_app.run_polling()
 
 
 if __name__ == "__main__":

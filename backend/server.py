@@ -139,7 +139,7 @@ def owner_users(x_owner_secret: str = Header(default="")):
 @app.post("/v1/owner/action")
 def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
     require_owner(x_owner_secret)
-    actions = {"ban", "unban", "verify", "unverify", "stars_add", "stars_set",
+    actions = {"ban", "unban", "verify", "unverify", "stars_add", "stars_remove", "stars_set",
                "label", "nft_set", "nft_remove", "number_set", "number_remove"}
     if data.action not in actions:
         raise HTTPException(400, "Unknown action")
@@ -155,12 +155,14 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
             c.execute("UPDATE users SET verified=1 WHERE id=%s", (user["id"],))
         elif data.action == "unverify":
             c.execute("UPDATE users SET verified=0, token_hash=NULL WHERE id=%s", (user["id"],))
-        elif data.action in ("stars_add", "stars_set"):
+        elif data.action in ("stars_add", "stars_remove", "stars_set"):
             try: amount = int(data.value)
             except (TypeError, ValueError): raise HTTPException(400, "Stars must be an integer")
             if amount < 0 or amount > 1000000000: raise HTTPException(400, "Invalid Stars amount")
             if data.action == "stars_add":
-                c.execute("UPDATE users SET stars=GREATEST(0, stars + %s) WHERE id=%s", (amount, user["id"]))
+                c.execute("UPDATE users SET stars=stars + %s WHERE id=%s", (amount, user["id"]))
+            elif data.action == "stars_remove":
+                c.execute("UPDATE users SET stars=GREATEST(0, stars - %s) WHERE id=%s", (amount, user["id"]))
             else:
                 c.execute("UPDATE users SET stars=%s WHERE id=%s", (amount, user["id"]))
         elif data.action == "label":

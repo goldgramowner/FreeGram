@@ -157,9 +157,10 @@ public class FreeGramEntryActivity extends Activity {
                         String kind=ch.optString("kind","chat");
                         String title=ch.optString("title","");
                         if(title.isEmpty())title="@"+ch.optString("other_username","личный чат");
+                        final String chatTitle=title;
                         String preview=ch.optString("last_message","Нет сообщений");
-                        Button item=new Button(this);item.setText(title+"\n"+preview);
-                        item.setOnClickListener(v->openChat(chatId,title,u,id));
+                        Button item=new Button(this);item.setText(chatTitle+"\n"+preview);
+                        item.setOnClickListener(v->openChat(chatId,chatTitle,u,id));
                         list.addView(item,new LinearLayout.LayoutParams(-1,-2));
                     }
                 });

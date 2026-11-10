@@ -1,72 +1,71 @@
 import os
+import json
 import asyncio
-import sqlite3
-import secrets
-import hashlib
 import logging
-from datetime import datetime, timezone
+import urllib.request
+import urllib.error
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler, ContextTypes
+)
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 OWNER_TELEGRAM_ID = int(os.environ["OWNER_TELEGRAM_ID"])
-DB_PATH = os.getenv("FREEGRAM_BOT_DB", "freegram_bot.sqlite3")
+AUTH_API_URL = os.environ["AUTH_API_URL"].rstrip("/")
+BOT_API_SECRET = os.environ["BOT_API_SECRET"]
+OWNER_API_SECRET = os.environ["OWNER_API_SECRET"]
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("freegram-bot")
 
 
-def db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def api_request(path, method="GET", data=None, secret_name=None):
+    headers = {"Content-Type": "application/json"}
+    if secret_name == "bot":
+        headers["X-Bot-Secret"] = BOT_API_SECRET
+    elif secret_name == "owner":
+        headers["X-Owner-Secret"] = OWNER_API_SECRET
+
+    body = json.dumps(data).encode() if data is not None else None
+    req = urllib.request.Request(
+        AUTH_API_URL + path,
+        data=body,
+        headers=headers,
+        method=method
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=25) as response:
+            return json.loads(response.read().decode())
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode()
+        except Exception:
+            detail = str(e)
+        raise RuntimeError(f"API HTTP {e.code}: {detail}")
+    except Exception as e:
+        raise RuntimeError(f"API connection error: {e}")
 
 
-def init_db():
-    with db() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS registrations (
-                telegram_id INTEGER PRIMARY KEY,
-                virtual_number TEXT UNIQUE NOT NULL,
-                otp_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                verified INTEGER NOT NULL DEFAULT 0
-            )
-        """)
-
-
-def new_registration(telegram_id: int):
-    # In-app identifier only; this is not a telephone number.
-    number = "+132" + "".join(str(secrets.randbelow(10)) for _ in range(8))
-    otp = "".join(str(secrets.randbelow(10)) for _ in range(6))
-    salt = secrets.token_hex(16)
-    digest = hashlib.sha256((salt + otp).encode()).hexdigest()
-    with db() as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO registrations "
-            "(telegram_id, virtual_number, otp_hash, created_at, verified) VALUES (?, ?, ?, ?, 0)",
-            (telegram_id, number, salt + ":" + digest, datetime.now(timezone.utc).isoformat())
-        )
-    return number, otp
+def main_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🆔 Получить FreeGram ID", callback_data="get_id")]
+    ])
 
 
 def owner_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📊 Статус бота", callback_data="owner_status")],
-        [InlineKeyboardButton("ℹ️ Команды владельца", callback_data="owner_help")]
+        [InlineKeyboardButton("📊 Статус FreeGram", callback_data="owner_status")],
+        [InlineKeyboardButton("ℹ️ Команды", callback_data="owner_help")]
     ])
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🆔 Получить FreeGram ID", callback_data="get_id")]
-    ])
     await update.message.reply_text(
         "Добро пожаловать в FreeGram!\n\n"
-        "Бот выдаёт виртуальный ID для будущей регистрации в приложении. "
-        "Это не номер телефона и он не принимает SMS.",
-        reply_markup=keyboard
+        "Здесь можно получить ID для регистрации в приложении.",
+        reply_markup=main_keyboard()
     )
 
 
@@ -75,7 +74,11 @@ async def owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user or user.id != OWNER_TELEGRAM_ID:
         await update.message.reply_text("⛔ Нет доступа.")
         return
-    await update.message.reply_text("🔐 Owner Panel", reply_markup=owner_keyboard())
+
+    await update.message.reply_text(
+        "🔐 FreeGram Owner Panel",
+        reply_markup=owner_keyboard()
+    )
 
 
 async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -84,14 +87,28 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = query.from_user
 
     if query.data == "get_id":
-        number, otp = new_registration(user.id)
-        await query.edit_message_text(
-            "✅ Тестовая регистрация FreeGram\n\n"
-            f"Виртуальный ID: {number}\n"
-            f"Одноразовый код: {otp}\n\n"
-            "Приложение пока не подключено к серверу авторизации. "
-            "Этот код демонстрационный и ещё не входит в FreeGram."
-        )
+        await query.edit_message_text("⏳ Запрашиваю регистрацию у FreeGram API...")
+        try:
+            result = await asyncio.to_thread(
+                api_request,
+                "/v1/registrations",
+                "POST",
+                {"telegram_id": user.id},
+                "bot"
+            )
+            await query.edit_message_text(
+                "✅ Регистрация FreeGram создана!\n\n"
+                f"🆔 FreeGram ID: {result['virtual_id']}\n"
+                f"🔐 Одноразовый код: {result['code']}\n\n"
+                "Код действует 10 минут.\n"
+                "Используй его для входа после подключения регистрации в приложении."
+            )
+        except Exception as e:
+            log.exception("Registration API error")
+            await query.edit_message_text(
+                "❌ Не удалось создать регистрацию.\n"
+                "Сервер временно недоступен. Попробуй позже."
+            )
         return
 
     if user.id != OWNER_TELEGRAM_ID:
@@ -99,40 +116,41 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if query.data == "owner_status":
-        with db() as conn:
-            count = conn.execute("SELECT COUNT(*) AS n FROM registrations").fetchone()["n"]
-        await query.edit_message_text(
-            f"🔐 Owner Panel\nТестовых заявок: {count}",
-            reply_markup=owner_keyboard()
-        )
+        try:
+            result = await asyncio.to_thread(
+                api_request, "/v1/owner/status", "GET", None, "owner"
+            )
+            await query.edit_message_text(
+                "🔐 FreeGram Owner Panel\n\n"
+                f"👥 Всего аккаунтов: {result['total_users']}\n"
+                f"✅ Подтверждено: {result['verified_users']}",
+                reply_markup=owner_keyboard()
+            )
+        except Exception:
+            log.exception("Owner status error")
+            await query.edit_message_text(
+                "❌ Не удалось получить статус API.",
+                reply_markup=owner_keyboard()
+            )
+
     elif query.data == "owner_help":
         await query.edit_message_text(
-            "Команды:\n/owner — открыть панель владельца\n\n"
-            "Stars, метки, NFT-юзернеймы, верификацию и блокировки "
-            "подключим после создания общей базы/API FreeGram.",
+            "🔐 Команды владельца:\n\n"
+            "/owner — открыть Owner Panel\n"
+            "/start — главное меню\n\n"
+            "Проверка аккаунтов уже подключена к API. "
+            "Управление метками, Stars и номерами добавим следующим этапом.",
             reply_markup=owner_keyboard()
         )
 
 
 def main():
-    init_db()
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("owner", owner))
     app.add_handler(CallbackQueryHandler(on_button))
-    log.info("FreeGram bot starting")
-    async def run():
-        await app.initialize()
-        await app.start()
-        await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
-        print("FreeGram Bot запущен!")
-        try:
-            await asyncio.Event().wait()
-        finally:
-            await app.updater.stop()
-            await app.stop()
-            await app.shutdown()
-    asyncio.run(run())
+    log.info("FreeGram Auth Bot starting")
+    app.run_polling()
 
 
 if __name__ == "__main__":

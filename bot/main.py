@@ -1,4 +1,5 @@
 import os
+import asyncio
 import sqlite3
 import secrets
 import hashlib
@@ -37,7 +38,7 @@ def init_db():
 
 def new_registration(telegram_id: int):
     # In-app identifier only; this is not a telephone number.
-    number = "+888" + "".join(str(secrets.randbelow(10)) for _ in range(8))
+    number = "+132" + "".join(str(secrets.randbelow(10)) for _ in range(8))
     otp = "".join(str(secrets.randbelow(10)) for _ in range(6))
     salt = secrets.token_hex(16)
     digest = hashlib.sha256((salt + otp).encode()).hexdigest()
@@ -120,7 +121,18 @@ def main():
     app.add_handler(CommandHandler("owner", owner))
     app.add_handler(CallbackQueryHandler(on_button))
     log.info("FreeGram bot starting")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    async def run():
+        await app.initialize()
+        await app.start()
+        await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        print("FreeGram Bot запущен!")
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await app.updater.stop()
+            await app.stop()
+            await app.shutdown()
+    asyncio.run(run())
 
 
 if __name__ == "__main__":

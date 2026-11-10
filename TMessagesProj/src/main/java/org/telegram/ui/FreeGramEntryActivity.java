@@ -44,22 +44,50 @@ public class FreeGramEntryActivity extends Activity {
         TextView t=new TextView(this); t.setText(s); t.setTextSize(size);
         t.setTextColor(color); t.setGravity(Gravity.CENTER); return t;
     }
+    private android.graphics.drawable.GradientDrawable shape(int color,int strokeColor,int radius) {
+        android.graphics.drawable.GradientDrawable d=new android.graphics.drawable.GradientDrawable();
+        d.setColor(color); d.setCornerRadius(radius); if(strokeColor!=Color.TRANSPARENT)d.setStroke(2,strokeColor); return d;
+    }
+    private void styleField(EditText field,String hint) {
+        field.setSingleLine(true); field.setHint(hint); field.setTextSize(16);
+        field.setTextColor(Color.rgb(30,41,59)); field.setHintTextColor(Color.rgb(139,151,168));
+        field.setPadding(18,0,18,0); field.setBackground(shape(Color.rgb(247,249,252),Color.rgb(226,232,240),18));
+    }
+    private void styleButton(Button button,boolean primary) {
+        button.setAllCaps(false); button.setTextSize(16); button.setTextColor(primary?Color.WHITE:Color.rgb(35,111,220));
+        button.setBackground(shape(primary?Color.rgb(35,111,220):Color.WHITE,primary?Color.TRANSPARENT:Color.rgb(215,227,245),18));
+        button.setElevation(primary?3:0);
+    }
     private void showAuth() {
-        LinearLayout l=root();
-        l.addView(label("FreeGram",32,Color.rgb(35,111,220)),new LinearLayout.LayoutParams(-1,-2));
-        l.addView(label("Вход без номера телефона",15,Color.DKGRAY));
-        username=new EditText(this); username.setSingleLine(true); username.setHint("Логин (5–24 символа)");
-        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,58); p.topMargin=28; l.addView(username,p);
-        password=new EditText(this); password.setSingleLine(true); password.setHint("Пароль (от 8 символов)"); password.setInputType(129);
-        p=new LinearLayout.LayoutParams(-1,58); p.topMargin=10; l.addView(password,p);
-        Button reg=new Button(this); reg.setText("Создать аккаунт");
-        p=new LinearLayout.LayoutParams(-1,-2); p.topMargin=18; l.addView(reg,p);
-        Button login=new Button(this); login.setText("Войти"); l.addView(login,new LinearLayout.LayoutParams(-1,-2));
-        progress=new ProgressBar(this); progress.setVisibility(View.GONE); l.addView(progress);
-        status=label("",14,Color.DKGRAY); p=new LinearLayout.LayoutParams(-1,-2); p.topMargin=16; l.addView(status,p);
+        LinearLayout outer=root(); outer.setGravity(Gravity.CENTER); outer.setPadding(24,28,24,28);
+        LinearLayout card=new LinearLayout(this); card.setOrientation(1); card.setGravity(Gravity.CENTER_HORIZONTAL);
+        card.setPadding(24,28,24,24); card.setBackground(shape(Color.WHITE,Color.rgb(232,237,245),24)); card.setElevation(8);
+        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2); cp.width=-1; outer.addView(card,cp);
+
+        TextView mark=label("F",25,Color.WHITE); mark.setTypeface(null,1);
+        mark.setBackground(shape(Color.rgb(35,111,220),Color.TRANSPARENT,22));
+        LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(58,58); mp.gravity=Gravity.CENTER; mp.bottomMargin=14; card.addView(mark,mp);
+        TextView brand=label("FreeGram",30,Color.rgb(27,43,67)); brand.setTypeface(null,1);
+        card.addView(brand,new LinearLayout.LayoutParams(-1,-2));
+        TextView subtitle=label("Твой мессенджер. Без номера телефона.",14,Color.rgb(112,126,147));
+        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,-2); sp.topMargin=7; sp.bottomMargin=22; card.addView(subtitle,sp);
+
+        username=new EditText(this); styleField(username,"Имя пользователя");
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,56); card.addView(username,p);
+        password=new EditText(this); styleField(password,"Пароль"); password.setInputType(129);
+        p=new LinearLayout.LayoutParams(-1,56); p.topMargin=12; card.addView(password,p);
+
+        Button reg=new Button(this); reg.setText("Создать аккаунт"); styleButton(reg,true);
+        p=new LinearLayout.LayoutParams(-1,54); p.topMargin=20; card.addView(reg,p);
+        Button login=new Button(this); login.setText("Уже есть аккаунт? Войти"); styleButton(login,false);
+        p=new LinearLayout.LayoutParams(-1,48); p.topMargin=6; card.addView(login,p);
+        progress=new ProgressBar(this); progress.setVisibility(View.GONE);
+        p=new LinearLayout.LayoutParams(-2,-2); p.topMargin=12; card.addView(progress,p);
+        status=label("",13,Color.rgb(100,116,139)); p=new LinearLayout.LayoutParams(-1,-2); p.topMargin=10; card.addView(status,p);
+
         reg.setOnClickListener(v->submit("/v1/auth/register"));
         login.setOnClickListener(v->submit("/v1/auth/login"));
-        setContentView(l);
+        setContentView(outer);
     }
     private void restoreSession(String token) {
         busy=true; showLoading("Проверяю сохранённый вход...");

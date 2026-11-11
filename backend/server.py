@@ -98,6 +98,10 @@ def require_owner(secret):
 class Registration(BaseModel):
     telegram_id: int
 
+class LoginCodeRequest(BaseModel):
+    virtual_id: str = Field(min_length=13, max_length=13)
+    telegram_id: int
+
 class DirectRegistration(BaseModel):
     username: str = Field(min_length=5, max_length=24)
     password: str = Field(min_length=8, max_length=128)
@@ -196,21 +200,52 @@ def direct_login(data: DirectLogin):
 @app.post("/v1/registrations")
 def register(data: Registration, x_bot_secret: str = Header(default="")):
     require_bot(x_bot_secret)
-    virtual_id = "FG-" + secrets.token_hex(5).upper()
+    now = datetime.now(timezone.utc)
     code = "".join(str(secrets.randbelow(10)) for _ in range(6))
     salt = secrets.token_hex(16)
-    now = datetime.now(timezone.utc)
+    expires = (now + timedelta(minutes=10)).isoformat()
     with connect() as c:
-        c.execute("""INSERT INTO users
-            (telegram_id, virtual_id, otp_salt, otp_hash, otp_expires, verified, token_hash, created_at)
-            VALUES (%s,%s,%s,%s,%s,0,NULL,%s)
-            ON CONFLICT (telegram_id) DO UPDATE SET
-            virtual_id=EXCLUDED.virtual_id, otp_salt=EXCLUDED.otp_salt,
-            otp_hash=EXCLUDED.otp_hash, otp_expires=EXCLUDED.otp_expires,
-            verified=0, token_hash=NULL""",
-            (data.telegram_id, virtual_id, salt, digest(salt + code),
-             (now + timedelta(minutes=10)).isoformat(), now.isoformat()))
+        existing = c.execute(
+            "SELECT id, virtual_id, banned FROM users WHERE telegram_id=%s",
+            (data.telegram_id,)
+        ).fetchone()
+        if existing:
+            if existing["banned"]:
+                raise HTTPException(403, "Account banned")
+            virtual_id = existing["virtual_id"]
+            c.execute("""UPDATE users SET otp_salt=%s, otp_hash=%s, otp_expires=%s
+                WHERE id=%s""",
+                (salt, digest(salt + code), expires, existing["id"]))
+        else:
+            virtual_id = "FG-" + secrets.token_hex(5).upper()
+            c.execute("""INSERT INTO users
+                (telegram_id, virtual_id, otp_salt, otp_hash, otp_expires,
+                 verified, token_hash, created_at)
+                VALUES (%s,%s,%s,%s,%s,0,NULL,%s)""",
+                (data.telegram_id, virtual_id, salt, digest(salt + code),
+                 expires, now.isoformat()))
     return {"ok": True, "virtual_id": virtual_id, "code": code, "expires_in": 600}
+
+
+@app.post("/v1/auth/code")
+def issue_login_code(data: LoginCodeRequest, x_bot_secret: str = Header(default="")):
+    require_bot(x_bot_secret)
+    now = datetime.now(timezone.utc)
+    code = "".join(str(secrets.randbelow(10)) for _ in range(6))
+    salt = secrets.token_hex(16)
+    with connect() as c:
+        user = c.execute("""SELECT id, telegram_id, banned FROM users
+            WHERE virtual_id=%s""", (data.virtual_id.upper(),)).fetchone()
+        if not user or user["telegram_id"] != data.telegram_id:
+            raise HTTPException(404, "FreeGram ID not found for this Telegram account")
+        if user["banned"]:
+            raise HTTPException(403, "Account banned")
+        c.execute("""UPDATE users SET otp_salt=%s, otp_hash=%s, otp_expires=%s
+            WHERE id=%s""",
+            (salt, digest(salt + code), (now + timedelta(minutes=10)).isoformat(), user["id"]))
+    return {"ok": True, "virtual_id": data.virtual_id.upper(),
+            "code": code, "expires_in": 600}
+
 
 @app.post("/v1/auth/verify")
 def verify(data: Verification):

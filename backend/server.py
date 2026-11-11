@@ -224,7 +224,7 @@ def register(data: Registration, x_bot_secret: str = Header(default="")):
 @app.post("/v1/auth/request-code")
 def request_virtual_number_code(data: VirtualNumberRequest):
     number = data.virtual_number.strip()
-    if not re.fullmatch(r"\\+7\\d{10}", number):
+    if not re.fullmatch(r"\+7\d{10}", number):
         raise HTTPException(400, "Введите виртуальный номер в формате +7XXXXXXXXXX")
     now = datetime.now(timezone.utc)
     code = "".join(str(secrets.randbelow(10)) for _ in range(6))
@@ -274,7 +274,7 @@ def verify(data: Verification):
     now = datetime.now(timezone.utc)
     with connect() as c:
         if data.virtual_number:
-            if not re.fullmatch(r"\\+7\\d{10}", data.virtual_number.strip()):
+            if not re.fullmatch(r"\+7\d{10}", data.virtual_number.strip()):
                 raise HTTPException(400, "Invalid virtual number")
             user = c.execute("SELECT * FROM users WHERE virtual_number=%s",
                              (data.virtual_number.strip(),)).fetchone()
@@ -640,8 +640,8 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
             c.execute("UPDATE users SET nft_username=NULL WHERE id=%s", (user["id"],))
         elif data.action == "number_set":
             number = str(data.value or "").strip()
-            valid_plus7 = bool(re.fullmatch(r"\\+7\\d{10}", number))
-            valid_legacy = bool(re.fullmatch(r"\\+888\\d{8,10}", number))
+            valid_plus7 = bool(re.fullmatch(r"\+7\d{10}", number))
+            valid_legacy = bool(re.fullmatch(r"\+888\d{8,10}", number))
             if not (valid_plus7 or valid_legacy):
                 raise HTTPException(400, "Number must be +7 followed by 10 digits")
             try: c.execute("UPDATE users SET virtual_number=%s WHERE id=%s", (number, user["id"]))

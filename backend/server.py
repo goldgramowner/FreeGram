@@ -57,6 +57,15 @@ def init_db():
             user_id BIGINT NOT NULL REFERENCES users(id), body TEXT NOT NULL,
             created_at TEXT NOT NULL)""")
         c.execute("CREATE INDEX IF NOT EXISTS messages_chat_id_idx ON messages(chat_id,id)")
+        c.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id BIGINT REFERENCES messages(id) ON DELETE SET NULL")
+        c.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at TEXT")
+        c.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at TEXT")
+        c.execute("""CREATE TABLE IF NOT EXISTS message_reactions (
+            message_id BIGINT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            reaction TEXT NOT NULL CHECK(length(reaction) <= 16),
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(message_id,user_id,reaction))""")
         c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT NOT NULL DEFAULT ''")
         c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT ''")
         c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT ''")
@@ -144,6 +153,13 @@ class SearchQuery(BaseModel):
 
 class MessageCreate(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+    reply_to_id: int | None = None
+
+class MessageEdit(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+class ReactionSet(BaseModel):
+    reaction: str = Field(min_length=1, max_length=16)
 
 
 @app.on_event("startup")
@@ -343,8 +359,13 @@ def get_messages(chat_id: int, authorization: str = Header(default=""), after_id
     with connect() as c:
         member=c.execute("SELECT 1 FROM chat_members WHERE chat_id=%s AND user_id=%s",(chat_id,user["id"])).fetchone()
         if not member: raise HTTPException(404,"Chat not found")
-        rows=c.execute("""SELECT m.id,m.body,m.created_at,u.username,u.virtual_id
+        rows=c.execute("""SELECT m.id,m.body,m.created_at,m.edited_at,m.reply_to_id,
+            reply.body AS reply_body,ru.username AS reply_username,
+            u.username,u.virtual_id,
+            (SELECT COUNT(*) FROM message_reactions mr WHERE mr.message_id=m.id) AS reaction_count
             FROM messages m JOIN users u ON u.id=m.user_id
+            LEFT JOIN messages reply ON reply.id=m.reply_to_id
+            LEFT JOIN users ru ON ru.id=reply.user_id
             WHERE m.chat_id=%s AND m.id>%s ORDER BY m.id ASC LIMIT 200""",(chat_id,after_id)).fetchall()
     return {"ok":True,"messages":rows}
 
@@ -360,9 +381,60 @@ def send_message(chat_id: int, data: MessageCreate, authorization: str = Header(
         if not chat or not member: raise HTTPException(404,"Chat not found")
         if chat["kind"]=="channel" and chat["owner_user_id"]!=user["id"]:
             raise HTTPException(403,"Only channel owner can post")
-        row=c.execute("""INSERT INTO messages(chat_id,user_id,body,created_at)
-            VALUES(%s,%s,%s,%s) RETURNING id,body,created_at""",(chat_id,user["id"],body,now)).fetchone()
+        if data.reply_to_id is not None:
+            parent=c.execute("SELECT id FROM messages WHERE id=%s AND chat_id=%s AND deleted_at IS NULL",
+                             (data.reply_to_id,chat_id)).fetchone()
+            if not parent: raise HTTPException(404,"Reply target not found")
+        row=c.execute("""INSERT INTO messages(chat_id,user_id,body,created_at,reply_to_id)
+            VALUES(%s,%s,%s,%s,%s) RETURNING id,body,created_at,reply_to_id""",
+            (chat_id,user["id"],body,now,data.reply_to_id)).fetchone()
     return {"ok":True,"message":{**row,"username":user["username"],"virtual_id":user["virtual_id"]}}
+
+
+@app.patch("/v1/chats/{chat_id}/messages/{message_id}")
+def edit_message(chat_id: int, message_id: int, data: MessageEdit, authorization: str = Header(default="")):
+    user=authenticated_user(authorization)
+    body=data.text.strip()
+    if not body: raise HTTPException(400,"Message cannot be empty")
+    with connect() as c:
+        row=c.execute("""UPDATE messages SET body=%s,edited_at=%s
+            WHERE id=%s AND chat_id=%s AND user_id=%s AND deleted_at IS NULL
+            RETURNING id,body,edited_at""",
+            (body,datetime.now(timezone.utc).isoformat(),message_id,chat_id,user["id"])).fetchone()
+    if not row: raise HTTPException(404,"Message not found or not yours")
+    return {"ok":True,"message":row}
+
+@app.delete("/v1/chats/{chat_id}/messages/{message_id}")
+def delete_message(chat_id: int, message_id: int, authorization: str = Header(default="")):
+    user=authenticated_user(authorization)
+    with connect() as c:
+        row=c.execute("""UPDATE messages SET body='Сообщение удалено',deleted_at=%s
+            WHERE id=%s AND chat_id=%s AND user_id=%s AND deleted_at IS NULL
+            RETURNING id""",
+            (datetime.now(timezone.utc).isoformat(),message_id,chat_id,user["id"])).fetchone()
+    if not row: raise HTTPException(404,"Message not found or not yours")
+    return {"ok":True}
+
+@app.post("/v1/chats/{chat_id}/messages/{message_id}/reactions")
+def toggle_reaction(chat_id: int, message_id: int, data: ReactionSet, authorization: str = Header(default="")):
+    user=authenticated_user(authorization)
+    now=datetime.now(timezone.utc).isoformat()
+    with connect() as c:
+        member=c.execute("SELECT 1 FROM chat_members WHERE chat_id=%s AND user_id=%s",(chat_id,user["id"])).fetchone()
+        message=c.execute("SELECT id FROM messages WHERE id=%s AND chat_id=%s AND deleted_at IS NULL",(message_id,chat_id)).fetchone()
+        if not member or not message: raise HTTPException(404,"Message not found")
+        existing=c.execute("SELECT 1 FROM message_reactions WHERE message_id=%s AND user_id=%s AND reaction=%s",
+                           (message_id,user["id"],data.reaction)).fetchone()
+        if existing:
+            c.execute("DELETE FROM message_reactions WHERE message_id=%s AND user_id=%s AND reaction=%s",
+                      (message_id,user["id"],data.reaction))
+            active=False
+        else:
+            c.execute("INSERT INTO message_reactions(message_id,user_id,reaction,created_at) VALUES(%s,%s,%s,%s)",
+                      (message_id,user["id"],data.reaction,now))
+            active=True
+        count=c.execute("SELECT COUNT(*) AS n FROM message_reactions WHERE message_id=%s",(message_id,)).fetchone()["n"]
+    return {"ok":True,"active":active,"reaction_count":count}
 
 
 @app.patch("/v1/me")

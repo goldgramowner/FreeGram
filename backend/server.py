@@ -342,8 +342,10 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
             c.execute("UPDATE users SET nft_username=NULL WHERE id=%s", (user["id"],))
         elif data.action == "number_set":
             number = str(data.value or "").strip()
-            if not number.startswith("+888") or not number[1:].isdigit() or len(number) not in (12, 13, 14):
-                raise HTTPException(400, "Number must be a valid +888 virtual number")
+            valid_us_virtual = number.startswith("+1") and len(number) == 12 and number[1:].isdigit()
+            valid_legacy = number.startswith("+888") and len(number) in (12, 13, 14) and number[1:].isdigit()
+            if not (valid_us_virtual or valid_legacy):
+                raise HTTPException(400, "Use a +1 virtual number (10 digits) or legacy +888 number")
             try: c.execute("UPDATE users SET virtual_number=%s WHERE id=%s", (number, user["id"]))
             except psycopg.errors.UniqueViolation: raise HTTPException(409, "Number already assigned")
         elif data.action == "number_remove":

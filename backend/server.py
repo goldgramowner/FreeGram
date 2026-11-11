@@ -84,6 +84,13 @@ def init_db():
             owner_user_id BIGINT NOT NULL REFERENCES users(id), sender_user_id BIGINT REFERENCES users(id),
             chat_id BIGINT REFERENCES chats(id), created_at TEXT NOT NULL)""")
         c.execute("CREATE INDEX IF NOT EXISTS user_gifts_owner_idx ON user_gifts(owner_user_id,id DESC)")
+        c.execute("""CREATE TABLE IF NOT EXISTS gift_market_listings (
+            id BIGSERIAL PRIMARY KEY,
+            gift_id BIGINT NOT NULL UNIQUE REFERENCES user_gifts(id) ON DELETE CASCADE,
+            seller_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            price_stars BIGINT NOT NULL CHECK(price_stars > 0),
+            created_at TEXT NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS gift_market_created_idx ON gift_market_listings(created_at DESC)")
         for gift in [
             ("rose", "Роза", "Небольшой знак внимания", 15, "common"),
             ("heart", "Сердце", "Подарок с теплом", 35, "common"),
@@ -147,6 +154,10 @@ class GiftSend(BaseModel):
     gift_code: str = Field(min_length=2, max_length=32)
     recipient_username: str = Field(min_length=5, max_length=24)
     chat_id: int | None = None
+
+class GiftMarketList(BaseModel):
+    gift_id: int
+    price_stars: int = Field(ge=1, le=100000000)
 
 class SearchQuery(BaseModel):
     query: str = Field(min_length=2, max_length=40)
@@ -615,6 +626,66 @@ def send_gift(data: GiftSend, authorization: str = Header(default="")):
     return {"ok": True, "gift_id": gift_id, "recipient": recipient["username"],
             "spent_stars": gift["price"], "remaining_stars": balance - gift["price"]}
 
+
+@app.get("/v1/shop/market")
+def gift_market(authorization: str = Header(default="")):
+    authenticated_user(authorization)
+    with connect() as c:
+        rows=c.execute("""SELECT l.id AS listing_id,l.price_stars,l.created_at,
+            ug.id AS gift_id,gt.code,gt.title,gt.description,gt.image_url,gt.rarity,
+            seller.username AS seller_username
+            FROM gift_market_listings l
+            JOIN user_gifts ug ON ug.id=l.gift_id
+            JOIN gift_types gt ON gt.id=ug.gift_type_id
+            JOIN users seller ON seller.id=l.seller_user_id
+            ORDER BY l.created_at DESC LIMIT 100""").fetchall()
+    return {"ok":True,"listings":rows}
+
+@app.post("/v1/shop/market/list")
+def list_gift_on_market(data: GiftMarketList, authorization: str = Header(default="")):
+    user=authenticated_user(authorization)
+    now=datetime.now(timezone.utc).isoformat()
+    with connect() as c:
+        gift=c.execute("""SELECT id FROM user_gifts
+            WHERE id=%s AND owner_user_id=%s FOR UPDATE""",(data.gift_id,user["id"])).fetchone()
+        if not gift: raise HTTPException(404,"Gift not found in your collection")
+        if c.execute("SELECT 1 FROM gift_market_listings WHERE gift_id=%s",(data.gift_id,)).fetchone():
+            raise HTTPException(409,"Gift is already listed")
+        c.execute("""INSERT INTO gift_market_listings(gift_id,seller_user_id,price_stars,created_at)
+            VALUES(%s,%s,%s,%s)""",(data.gift_id,user["id"],data.price_stars,now))
+    return {"ok":True,"listed":True,"gift_id":data.gift_id,"price_stars":data.price_stars}
+
+@app.delete("/v1/shop/market/{listing_id}")
+def cancel_gift_listing(listing_id: int, authorization: str = Header(default="")):
+    user=authenticated_user(authorization)
+    with connect() as c:
+        row=c.execute("""DELETE FROM gift_market_listings
+            WHERE id=%s AND seller_user_id=%s RETURNING gift_id""",(listing_id,user["id"])).fetchone()
+    if not row: raise HTTPException(404,"Listing not found")
+    return {"ok":True,"cancelled":True}
+
+@app.post("/v1/shop/market/{listing_id}/buy")
+def buy_market_gift(listing_id: int, authorization: str = Header(default="")):
+    buyer=authenticated_user(authorization)
+    now=datetime.now(timezone.utc).isoformat()
+    with connect() as c:
+        listing=c.execute("""SELECT l.id,l.gift_id,l.seller_user_id,l.price_stars
+            FROM gift_market_listings l WHERE l.id=%s FOR UPDATE""",(listing_id,)).fetchone()
+        if not listing: raise HTTPException(404,"Listing not found")
+        if listing["seller_user_id"]==buyer["id"]: raise HTTPException(400,"Cannot buy your own listing")
+        wallet=c.execute("SELECT stars FROM users WHERE id=%s FOR UPDATE",(buyer["id"],)).fetchone()
+        if wallet["stars"] < listing["price_stars"]: raise HTTPException(400,"Not enough Stars")
+        seller=c.execute("SELECT id FROM users WHERE id=%s",(listing["seller_user_id"],)).fetchone()
+        if not seller: raise HTTPException(404,"Seller not found")
+        c.execute("UPDATE users SET stars=stars-%s WHERE id=%s",(listing["price_stars"],buyer["id"]))
+        c.execute("UPDATE users SET stars=stars+%s WHERE id=%s",(listing["price_stars"],listing["seller_user_id"]))
+        moved=c.execute("""UPDATE user_gifts SET owner_user_id=%s,sender_user_id=%s,chat_id=NULL
+            WHERE id=%s AND owner_user_id=%s RETURNING id""",
+            (buyer["id"],listing["seller_user_id"],listing["gift_id"],listing["seller_user_id"])).fetchone()
+        if not moved: raise HTTPException(409,"Gift ownership changed")
+        c.execute("DELETE FROM gift_market_listings WHERE id=%s",(listing_id,))
+    return {"ok":True,"purchased":True,"gift_id":listing["gift_id"],
+            "spent_stars":listing["price_stars"],"remaining_stars":wallet["stars"]-listing["price_stars"]}
 
 @app.get("/v1/owner/status")
 def owner_status(x_owner_secret: str = Header(default="")):

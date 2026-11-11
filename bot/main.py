@@ -90,10 +90,13 @@ async def owner_action(virtual_id, action, value=None):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Добро пожаловать в FreeGram!\\n\\n"
-        "Нажми кнопку, чтобы получить ID и код входа в приложение.",
-        reply_markup=main_keyboard())
+    if is_owner(update):
+        await update.message.reply_text(
+            "🔐 FreeGram Owner Panel",
+            reply_markup=owner_keyboard())
+    else:
+        await update.message.reply_text(
+            "FreeGram Bot\\nБот управления FreeGram. Доступ к Owner Panel есть только у владельца.")
 
 
 async def owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -250,7 +253,8 @@ def main():
     telegram_app.add_handler(CommandHandler("users", users))
     commands = [
         "ban", "unban", "verify", "unverify", "stars_add", "stars_remove",
-        "stars_set", "label", "nft_set", "nft_remove", "number_set", "number_remove"
+        "stars_set", "label", "nft_set", "nft_remove", "number_set", "number_remove",
+        "number_generate"
     ]
     for name in commands:
         telegram_app.add_handler(CommandHandler(name, owner_command))

@@ -261,7 +261,9 @@ def bot_outbox(x_bot_secret: str = Header(default="")):
     require_bot(x_bot_secret)
     with connect() as c:
         rows = c.execute("""SELECT id,telegram_id,virtual_number,code
-            FROM bot_outbox WHERE sent_at IS NULL ORDER BY id LIMIT 20""").fetchall()
+            FROM bot_outbox WHERE sent_at IS NULL AND created_at>%s
+            ORDER BY id LIMIT 20""",
+            ((datetime.now(timezone.utc)-timedelta(minutes=10)).isoformat(),)).fetchall()
     return {"ok": True, "items": rows}
 
 
@@ -269,7 +271,7 @@ def bot_outbox(x_bot_secret: str = Header(default="")):
 def bot_outbox_sent(item_id: int, x_bot_secret: str = Header(default="")):
     require_bot(x_bot_secret)
     with connect() as c:
-        c.execute("UPDATE bot_outbox SET sent_at=%s WHERE id=%s AND sent_at IS NULL",
+        c.execute("UPDATE bot_outbox SET sent_at=%s, code='' WHERE id=%s AND sent_at IS NULL",
                   (datetime.now(timezone.utc).isoformat(), item_id))
     return {"ok": True}
 
@@ -394,6 +396,35 @@ def get_messages(chat_id: int, authorization: str = Header(default=""), after_id
             FROM messages m JOIN users u ON u.id=m.user_id
             WHERE m.chat_id=%s AND m.id>%s ORDER BY m.id ASC LIMIT 200""",(chat_id,after_id)).fetchall()
     return {"ok":True,"messages":rows}
+
+@app.get("/v1/chats/search")
+def search_public_chats(q: str, authorization: str = Header(default="")):
+    authenticated_user(authorization)
+    query = q.strip()
+    if len(query) < 2 or len(query) > 60:
+        raise HTTPException(400, "Search query must contain 2-60 characters")
+    with connect() as c:
+        rows = c.execute("""SELECT ch.id,ch.kind,ch.title,ch.description,
+            (SELECT COUNT(*) FROM chat_members cm WHERE cm.chat_id=ch.id) AS member_count
+            FROM chats ch WHERE ch.kind IN ('group','channel')
+            AND (LOWER(ch.title) LIKE LOWER(%s) OR LOWER(ch.description) LIKE LOWER(%s))
+            ORDER BY ch.id DESC LIMIT 30""", (f"%{query}%",f"%{query}%")).fetchall()
+    return {"ok": True, "chats": rows}
+
+
+@app.post("/v1/chats/{chat_id}/join")
+def join_public_chat(chat_id: int, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    now = datetime.now(timezone.utc).isoformat()
+    with connect() as c:
+        chat = c.execute("SELECT id,kind FROM chats WHERE id=%s", (chat_id,)).fetchone()
+        if not chat or chat["kind"] not in ("group","channel"):
+            raise HTTPException(404, "Public group or channel not found")
+        c.execute("""INSERT INTO chat_members(chat_id,user_id,joined_at)
+            VALUES(%s,%s,%s) ON CONFLICT(chat_id,user_id) DO NOTHING""",
+            (chat_id,user["id"],now))
+    return {"ok": True, "chat_id": chat_id, "kind": chat["kind"]}
+
 
 @app.post("/v1/chats/{chat_id}/messages")
 def send_message(chat_id: int, data: MessageCreate, authorization: str = Header(default="")):
@@ -654,6 +685,8 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
         elif data.action == "nft_remove":
             c.execute("UPDATE users SET nft_username=NULL WHERE id=%s", (user["id"],))
         elif data.action == "number_set":
+            if user["telegram_id"] is None:
+                raise HTTPException(400, "User must start FreeGram Bot and register with /register before receiving a +7 number")
             number = str(data.value or "").strip()
             valid_plus7 = bool(re.fullmatch(r"\+7\d{10}", number))
             valid_legacy = bool(re.fullmatch(r"\+888\d{8,10}", number))

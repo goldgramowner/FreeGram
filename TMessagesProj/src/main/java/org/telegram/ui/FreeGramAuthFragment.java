@@ -3,8 +3,10 @@ package org.telegram.ui;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -18,127 +20,152 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class FreeGramAuthFragment extends BaseFragment {
+    private static final String API_LOGIN = "/v1/auth/verify";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private EditText virtualNumber, code;
+    private EditText virtualId, code;
     private TextView status;
-    private Button requestButton, verifyButton;
+    private Button loginButton;
+
+    private int dp(Context context, float value) {
+        return (int) (value * context.getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private GradientDrawable shape(int color, int radius, Context context) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(dp(context, radius));
+        return drawable;
+    }
+
+    private TextView label(Context context, String value) {
+        TextView view = new TextView(context);
+        view.setText(value);
+        view.setTextColor(Color.rgb(174, 190, 211));
+        view.setTextSize(13);
+        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        return view;
+    }
 
     @Override
     public View createView(Context context) {
         actionBar.setAddToContainer(false);
-        ScrollView scroll = new ScrollView(context);
-        LinearLayout root = new LinearLayout(context);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setPadding(28, 48, 28, 32);
-        root.setBackgroundColor(Color.rgb(246, 248, 251));
-        scroll.addView(root);
 
-        TextView title = new TextView(context);
-        title.setText("FreeGram");
-        title.setTextColor(Color.rgb(28, 100, 190));
-        title.setTextSize(34);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        root.addView(title);
+        ScrollView scroll = new ScrollView(context);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(Color.rgb(10, 15, 24));
+
+        LinearLayout page = new LinearLayout(context);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setGravity(Gravity.CENTER);
+        page.setPadding(dp(context, 22), dp(context, 28), dp(context, 22), dp(context, 28));
+        scroll.addView(page, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(context, 24), dp(context, 28), dp(context, 24), dp(context, 24));
+        card.setBackground(shape(Color.rgb(21, 30, 45), 22, context));
+        page.addView(card, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        TextView logo = new TextView(context);
+        logo.setText("FreeGram");
+        logo.setTextColor(Color.rgb(83, 166, 255));
+        logo.setTextSize(32);
+        logo.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        logo.setGravity(Gravity.CENTER);
+        card.addView(logo, new LinearLayout.LayoutParams(-1, -2));
 
         TextView subtitle = new TextView(context);
-        subtitle.setText("Вход по виртуальному номеру");
-        subtitle.setTextColor(Color.DKGRAY);
-        subtitle.setTextSize(15);
+        subtitle.setText("Вход в аккаунт");
+        subtitle.setTextColor(Color.WHITE);
+        subtitle.setTextSize(19);
         subtitle.setGravity(Gravity.CENTER);
-        subtitle.setPadding(0, 10, 0, 28);
-        root.addView(subtitle);
+        subtitle.setPadding(0, dp(context, 8), 0, dp(context, 8));
+        card.addView(subtitle, new LinearLayout.LayoutParams(-1, -2));
 
-        virtualNumber = new EditText(context);
-        virtualNumber.setSingleLine(true);
-        virtualNumber.setHint("+7XXXXXXXXXX");
-        virtualNumber.setInputType(3);
-        virtualNumber.setTextSize(18);
-        root.addView(virtualNumber, new LinearLayout.LayoutParams(-1, 54));
+        TextView hint = new TextView(context);
+        hint.setText("Открой @FreeGramNelpBot и отправь /register. Введи выданные ID и код.");
+        hint.setTextColor(Color.rgb(151, 167, 188));
+        hint.setTextSize(13);
+        hint.setGravity(Gravity.CENTER);
+        hint.setPadding(0, 0, 0, dp(context, 24));
+        card.addView(hint, new LinearLayout.LayoutParams(-1, -2));
 
-        requestButton = new Button(context);
-        requestButton.setText("Получить код в Telegram-боте");
-        LinearLayout.LayoutParams requestParams = new LinearLayout.LayoutParams(-1, 54);
-        requestParams.topMargin = 16;
-        root.addView(requestButton, requestParams);
+        card.addView(label(context, "FREEGRAM ID"));
+        virtualId = new EditText(context);
+        virtualId.setSingleLine(true);
+        virtualId.setHint("FG-XXXXXXXXXX");
+        virtualId.setTextColor(Color.WHITE);
+        virtualId.setHintTextColor(Color.rgb(112, 130, 153));
+        virtualId.setTextSize(16);
+        virtualId.setInputType( android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+                | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        virtualId.setPadding(dp(context, 14), 0, dp(context, 14), 0);
+        virtualId.setBackground(shape(Color.rgb(12, 20, 33), 12, context));
+        LinearLayout.LayoutParams idParams = new LinearLayout.LayoutParams(-1, dp(context, 54));
+        idParams.topMargin = dp(context, 8);
+        idParams.bottomMargin = dp(context, 18);
+        card.addView(virtualId, idParams);
 
+        card.addView(label(context, "ОДНОРАЗОВЫЙ КОД"));
         code = new EditText(context);
         code.setSingleLine(true);
-        code.setHint("Код из FreeGram Bot");
-        code.setInputType(2);
+        code.setHint("123456");
+        code.setTextColor(Color.WHITE);
+        code.setHintTextColor(Color.rgb(112, 130, 153));
         code.setTextSize(18);
-        LinearLayout.LayoutParams codeParams = new LinearLayout.LayoutParams(-1, 54);
-        codeParams.topMargin = 18;
-        root.addView(code, codeParams);
+        code.setLetterSpacing(0.18f);
+        code.setGravity(Gravity.CENTER_VERTICAL);
+        code.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                | android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        code.setPadding(dp(context, 14), 0, dp(context, 14), 0);
+        code.setBackground(shape(Color.rgb(12, 20, 33), 12, context));
+        LinearLayout.LayoutParams codeParams = new LinearLayout.LayoutParams(-1, dp(context, 54));
+        codeParams.topMargin = dp(context, 8);
+        codeParams.bottomMargin = dp(context, 20);
+        card.addView(code, codeParams);
 
-        verifyButton = new Button(context);
-        verifyButton.setText("Войти");
-        LinearLayout.LayoutParams verifyParams = new LinearLayout.LayoutParams(-1, 54);
-        verifyParams.topMargin = 12;
-        root.addView(verifyButton, verifyParams);
+        loginButton = new Button(context);
+        loginButton.setText("ВОЙТИ");
+        loginButton.setTextColor(Color.WHITE);
+        loginButton.setTextSize(15);
+        loginButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        loginButton.setAllCaps(false);
+        loginButton.setBackground(shape(Color.rgb(43, 137, 232), 13, context));
+        card.addView(loginButton, new LinearLayout.LayoutParams(-1, dp(context, 52)));
 
         status = new TextView(context);
-        status.setTextColor(Color.DKGRAY);
+        status.setTextColor(Color.rgb(174, 190, 211));
+        status.setTextSize(13);
         status.setGravity(Gravity.CENTER);
-        status.setPadding(0, 18, 0, 0);
-        root.addView(status);
+        status.setPadding(0, dp(context, 16), 0, 0);
+        card.addView(status, new LinearLayout.LayoutParams(-1, -2));
 
-        requestButton.setOnClickListener(v -> requestCode());
-        verifyButton.setOnClickListener(v -> verifyCode(context));
+        loginButton.setOnClickListener(v -> verifyCode(context));
         fragmentView = scroll;
         return fragmentView;
     }
 
-    private String normalizedNumber() {
-        return virtualNumber.getText().toString().replace(" ", "").replace("-", "").trim();
-    }
-
-    private void requestCode() {
-        String number = normalizedNumber();
-        if (!number.matches("\\+7[0-9]{10}")) {
-            status.setText("Введите номер в формате +7 и ещё 10 цифр.");
-            return;
-        }
-        requestButton.setEnabled(false);
-        status.setText("Запрашиваем код…");
-        executor.execute(() -> {
-            try {
-                JSONObject body = new JSONObject();
-                body.put("virtual_number", number);
-                JSONObject result = FreeGramApi.request("POST", "/v1/auth/request-code", body, false);
-                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
-                main.post(() -> {
-                    status.setText(result.optString("message",
-                        "Если номер активен, код придёт в FreeGram Bot."));
-                    requestButton.setEnabled(true);
-                });
-            } catch (Exception e) {
-                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
-                main.post(() -> {
-                    status.setText(e.getMessage() == null ? "Не удалось запросить код." : e.getMessage());
-                    requestButton.setEnabled(true);
-                });
-            }
-        });
-    }
-
     private void verifyCode(Context context) {
-        String number = normalizedNumber();
+        String id = virtualId.getText().toString().trim().toUpperCase(java.util.Locale.US);
         String value = code.getText().toString().trim();
-        if (!number.matches("\\+7[0-9]{10}") || !value.matches("[0-9]{6}")) {
-            status.setText("Проверьте номер и шестизначный код.");
+        if (!id.matches("FG-[A-Z0-9]{6,32}") || !value.matches("[0-9]{6}")) {
+            status.setText("Проверь FreeGram ID и шестизначный код.");
             return;
         }
-        verifyButton.setEnabled(false);
-        status.setText("Проверяем код…");
+
+        loginButton.setEnabled(false);
+        status.setText("Проверяем данные…");
         executor.execute(() -> {
             try {
                 JSONObject body = new JSONObject();
-                body.put("virtual_number", number);
+                body.put("virtual_id", id);
                 body.put("code", value);
-                JSONObject result = FreeGramApi.request("POST", "/v1/auth/verify", body, false);
+                JSONObject result = FreeGramApi.request("POST", API_LOGIN, body, false);
                 String token = result.optString("access_token", "");
-                if (token.isEmpty()) throw new Exception("Сервер не вернул токен авторизации");
+                if (token.isEmpty()) throw new Exception("Сервер не вернул токен авторизации.");
                 FreeGramApi.saveToken(token);
                 FreeGramApi.request("GET", "/v1/me", null, true);
                 android.os.Handler main = new android.os.Handler(context.getMainLooper());
@@ -149,8 +176,8 @@ public class FreeGramAuthFragment extends BaseFragment {
             } catch (Exception e) {
                 android.os.Handler main = new android.os.Handler(context.getMainLooper());
                 main.post(() -> {
-                    status.setText(e.getMessage() == null ? "Не удалось войти." : e.getMessage());
-                    verifyButton.setEnabled(true);
+                    status.setText(e.getMessage() == null ? "Не удалось войти. Проверь ID и код." : e.getMessage());
+                    loginButton.setEnabled(true);
                 });
             }
         });

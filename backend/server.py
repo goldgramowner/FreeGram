@@ -230,8 +230,8 @@ def me(authorization: str = Header(default="")):
     if not authorization.startswith("Bearer "):
         raise HTTPException(401, "Authorization required")
     with connect() as c:
-        user = c.execute("""SELECT virtual_id, username, telegram_id, verified, created_at,
-            banned, stars, label, nft_username, virtual_number
+        user = c.execute("""SELECT virtual_id, username, display_name, bio, avatar_url,
+            telegram_id, verified, created_at, banned, stars, label, nft_username, virtual_number
             FROM users WHERE token_hash=%s""", (digest(authorization[7:]),)).fetchone()
     if not user or not user["verified"] or user["banned"]:
         raise HTTPException(401, "Invalid session")
@@ -252,7 +252,7 @@ def authenticated_user(authorization):
 def list_chats(authorization: str = Header(default="")):
     user = authenticated_user(authorization)
     with connect() as c:
-        rows = c.execute("""SELECT ch.id,ch.kind,ch.title,ch.created_at,
+        rows = c.execute("""SELECT ch.id,ch.kind,ch.title,ch.username,ch.cover_url,ch.invite_code,ch.created_at,
             (SELECT m.body FROM messages m WHERE m.chat_id=ch.id ORDER BY m.id DESC LIMIT 1) AS last_message,
             (SELECT u.username FROM chat_members cm JOIN users u ON u.id=cm.user_id
              WHERE cm.chat_id=ch.id AND cm.user_id<>%s LIMIT 1) AS other_username
@@ -264,6 +264,7 @@ def list_chats(authorization: str = Header(default="")):
 def create_chat(data: ChatCreate, authorization: str = Header(default="")):
     user = authenticated_user(authorization)
     now = datetime.now(timezone.utc).isoformat()
+    invite_code = None
     with connect() as c:
         if data.kind == "direct":
             if not data.username:
@@ -300,7 +301,7 @@ def create_chat(data: ChatCreate, authorization: str = Header(default="")):
             chat_id=cur.fetchone()["id"]
             c.execute("INSERT INTO chat_members(chat_id,user_id,joined_at) VALUES(%s,%s,%s)",
                       (chat_id,user["id"],now))
-    return {"ok": True, "chat_id": chat_id, "existing": False}
+    return {"ok": True, "chat_id": chat_id, "existing": False, "invite_code": invite_code}
 
 @app.get("/v1/chats/{chat_id}/messages")
 def get_messages(chat_id: int, authorization: str = Header(default=""), after_id: int = 0):

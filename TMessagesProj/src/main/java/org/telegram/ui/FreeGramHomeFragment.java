@@ -189,7 +189,7 @@ public class FreeGramHomeFragment extends BaseFragment {
                         boolean verified = user.optInt("verified", 0) == 1;
                         String nft = user.optString("nft_username", "");
                         String line = (display.isEmpty() ? username : display + "  @" + username);
-                        if (!nft.isEmpty()) line += "  ◆ @" + nft;
+                        if (!nft.isEmpty()) line += "  ◆ @" + nft + " · " + user.optString("nft_rarity", "common");
                         if (verified) line += "  ✓";
                         if (!label.isEmpty()) line += " · " + label;
                         TextView row = makeRow(line, user.optString("bio", ""));

@@ -96,8 +96,12 @@ async def owner_action(virtual_id, action, value=None):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_owner(update):
+        await update.message.reply_text("🔐 FreeGram Owner Panel",
+                                        reply_markup=owner_keyboard())
+        return
     await update.message.reply_text(
-        "Добро пожаловать в FreeGram!\n\\n"
+        "Добро пожаловать в FreeGram!\n\n"
         "Нажми кнопку, чтобы получить виртуальный номер +1 и код входа в приложение.",
         reply_markup=main_keyboard())
 

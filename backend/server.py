@@ -112,7 +112,8 @@ class DirectLogin(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 class Verification(BaseModel):
-    virtual_id: str
+    virtual_id: str | None = None
+    virtual_number: str | None = None
     code: str
 
 class VirtualNumberRequest(BaseModel):
@@ -272,7 +273,16 @@ def bot_outbox_sent(item_id: int, x_bot_secret: str = Header(default="")):
 def verify(data: Verification):
     now = datetime.now(timezone.utc)
     with connect() as c:
-        user = c.execute("SELECT * FROM users WHERE virtual_id=%s", (data.virtual_id.upper(),)).fetchone()
+        if data.virtual_number:
+            if not re.fullmatch(r"\\+7\\d{10}", data.virtual_number.strip()):
+                raise HTTPException(400, "Invalid virtual number")
+            user = c.execute("SELECT * FROM users WHERE virtual_number=%s",
+                             (data.virtual_number.strip(),)).fetchone()
+        elif data.virtual_id:
+            user = c.execute("SELECT * FROM users WHERE virtual_id=%s",
+                             (data.virtual_id.upper(),)).fetchone()
+        else:
+            raise HTTPException(400, "Virtual number or ID required")
         if not user or not user["otp_hash"] or datetime.fromisoformat(user["otp_expires"]) < now:
             raise HTTPException(400, "Invalid ID or expired code")
         if not secrets.compare_digest(digest(user["otp_salt"] + data.code), user["otp_hash"]):
@@ -282,7 +292,8 @@ def verify(data: Verification):
         token = secrets.token_urlsafe(32)
         c.execute("""UPDATE users SET verified=1, otp_hash=NULL, otp_salt=NULL,
             otp_expires=NULL, token_hash=%s WHERE id=%s""", (digest(token), user["id"]))
-    return {"ok": True, "access_token": token, "token_type": "Bearer", "virtual_id": data.virtual_id.upper()}
+    return {"ok": True, "access_token": token, "token_type": "Bearer",
+            "virtual_id": user["virtual_id"], "virtual_number": user["virtual_number"]}
 
 @app.get("/v1/me")
 def me(authorization: str = Header(default="")):

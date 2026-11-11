@@ -769,6 +769,16 @@ def owner_status(x_owner_secret: str = Header(default="")):
         banned = c.execute("SELECT COUNT(*) AS n FROM users WHERE banned=1").fetchone()["n"]
     return {"ok": True, "total_users": total, "verified_users": verified, "banned_users": banned}
 
+@app.get("/v1/owner/chats")
+def owner_chats(x_owner_secret: str = Header(default="")):
+    require_owner(x_owner_secret)
+    with connect() as c:
+        rows = c.execute("""SELECT id,kind,title,verified,label,created_at
+            FROM chats WHERE kind IN ('group','channel')
+            ORDER BY id DESC LIMIT 100""").fetchall()
+    return {"ok": True, "chats": rows}
+
+
 @app.post("/v1/owner/chat-action")
 def owner_chat_action(data: OwnerChatAction, x_owner_secret: str = Header(default="")):
     require_owner(x_owner_secret)

@@ -491,7 +491,7 @@ def update_me(data: ProfileUpdate, authorization: str = Header(default="")):
         for key, value in fields.items():
             c.execute(f"UPDATE users SET {key}=%s WHERE id=%s", (value or "", user["id"]))
         row = c.execute("""SELECT virtual_id,username,display_name,bio,avatar_url,
-            verified,label,nft_username,virtual_number,stars FROM users WHERE id=%s""",
+            verified,label,nft_username,nft_rarity,virtual_number,stars FROM users WHERE id=%s""",
             (user["id"],)).fetchone()
     return {"ok": True, "profile": row}
 
@@ -504,7 +504,7 @@ def search_users(q: str, authorization: str = Header(default="")):
         raise HTTPException(400, "Search query must contain 2-40 characters")
     with connect() as c:
         rows = c.execute("""SELECT virtual_id,username,display_name,bio,avatar_url,
-            verified,label,nft_username,virtual_number
+            verified,label,nft_username,nft_rarity,virtual_number
             FROM users WHERE verified=1 AND banned=0
             AND (LOWER(username) LIKE %s OR LOWER(nft_username) LIKE %s
                  OR LOWER(display_name) LIKE %s)
@@ -519,7 +519,7 @@ def get_user_profile(username: str, authorization: str = Header(default="")):
     name = username.strip().lstrip("@").lower()
     with connect() as c:
         row = c.execute("""SELECT virtual_id,username,display_name,bio,avatar_url,
-            verified,label,nft_username,virtual_number
+            verified,label,nft_username,nft_rarity,virtual_number
             FROM users WHERE LOWER(username)=LOWER(%s) AND verified=1 AND banned=0""",
             (name,)).fetchone()
     if not row:
@@ -538,7 +538,7 @@ def chat_details(chat_id: int, authorization: str = Header(default="")):
         chat = c.execute("""SELECT id,kind,title,description,cover_url,invite_code,
             owner_user_id,created_at FROM chats WHERE id=%s""", (chat_id,)).fetchone()
         members = c.execute("""SELECT u.virtual_id,u.username,u.display_name,u.avatar_url,
-            u.verified,u.label,u.nft_username
+            u.verified,u.label,u.nft_username,u.nft_rarity
             FROM chat_members cm JOIN users u ON u.id=cm.user_id
             WHERE cm.chat_id=%s ORDER BY cm.joined_at LIMIT 200""", (chat_id,)).fetchall()
     return {"ok": True, "chat": chat, "members": members,

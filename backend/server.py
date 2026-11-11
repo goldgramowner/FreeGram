@@ -81,6 +81,10 @@ def init_db():
             virtual_number TEXT NOT NULL, code TEXT NOT NULL,
             created_at TEXT NOT NULL, sent_at TEXT)""")
         c.execute("CREATE INDEX IF NOT EXISTS bot_outbox_pending_idx ON bot_outbox(sent_at,id)")
+        c.execute("""CREATE TABLE IF NOT EXISTS bot_notifications (
+            id BIGSERIAL PRIMARY KEY, telegram_id BIGINT NOT NULL,
+            message TEXT NOT NULL, created_at TEXT NOT NULL, sent_at TEXT)""")
+        c.execute("CREATE INDEX IF NOT EXISTS bot_notifications_pending_idx ON bot_notifications(sent_at,id)")
         for gift in [
             ("rose", "Роза", "Небольшой знак внимания", 15, "common"),
             ("heart", "Сердце", "Подарок с теплом", 35, "common"),
@@ -257,6 +261,24 @@ def request_virtual_number_code(data: VirtualNumberRequest):
             VALUES(%s,%s,%s,%s)""",
             (user["telegram_id"], number, code, now.isoformat()))
     return {"ok": True, "message": "Если номер активен, код придёт в FreeGram Bot."}
+
+
+@app.get("/v1/bot/notifications")
+def bot_notifications(x_bot_secret: str = Header(default="")):
+    require_bot(x_bot_secret)
+    with connect() as c:
+        rows = c.execute("""SELECT id,telegram_id,message FROM bot_notifications
+            WHERE sent_at IS NULL ORDER BY id LIMIT 30""").fetchall()
+    return {"ok": True, "items": rows}
+
+
+@app.post("/v1/bot/notifications/{item_id}/sent")
+def bot_notification_sent(item_id: int, x_bot_secret: str = Header(default="")):
+    require_bot(x_bot_secret)
+    with connect() as c:
+        c.execute("UPDATE bot_notifications SET sent_at=%s WHERE id=%s AND sent_at IS NULL",
+                  (datetime.now(timezone.utc).isoformat(), item_id))
+    return {"ok": True}
 
 
 @app.get("/v1/bot/outbox")
@@ -719,6 +741,10 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
                 raise HTTPException(400, "Number must be +7 followed by 10 digits")
             try: c.execute("UPDATE users SET virtual_number=%s WHERE id=%s", (number, user["id"]))
             except psycopg.errors.UniqueViolation: raise HTTPException(409, "Number already assigned")
+            c.execute("INSERT INTO bot_notifications(telegram_id,message,created_at) VALUES(%s,%s,%s)",
+                (user["telegram_id"], "Тебе выдан виртуальный номер FreeGram: " + number +
+                 "\\nОткрой приложение FreeGram и войди по этому номеру. Код подтверждения придёт сюда.",
+                 datetime.now(timezone.utc).isoformat()))
         elif data.action == "number_remove":
             c.execute("UPDATE users SET virtual_number=NULL WHERE id=%s", (user["id"],))
         elif data.action == "number_generate":
@@ -733,6 +759,10 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
             if not number:
                 raise HTTPException(503, "Could not allocate a virtual number")
             c.execute("UPDATE users SET virtual_number=%s WHERE id=%s", (number, user["id"]))
+            c.execute("INSERT INTO bot_notifications(telegram_id,message,created_at) VALUES(%s,%s,%s)",
+                (user["telegram_id"], "Тебе выдан виртуальный номер FreeGram: " + number +
+                 "\\nОткрой приложение FreeGram и войди по этому номеру. Код подтверждения придёт сюда.",
+                 datetime.now(timezone.utc).isoformat()))
         result = c.execute("""SELECT virtual_id, verified, banned, stars, label,
             nft_username, nft_rarity, virtual_number FROM users WHERE id=%s""", (user["id"],)).fetchone()
     return {"ok": True, "user": result}

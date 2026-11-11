@@ -155,7 +155,7 @@ public class FreeGramChatFragment extends BaseFragment {
                         TextView bubble = new TextView(getParentActivity());
                         String username = item.optString("username", "Користувач");
                         String body = item.optString("body", "");
-                        bubble.setText(username + "\\n" + body);
+                        bubble.setText(username + "\n" + body);
                         bubble.setTextColor(Color.rgb(30, 38, 48));
                         bubble.setTextSize(15);
                         bubble.setPadding(dp(getParentActivity(), 14), dp(getParentActivity(), 10),

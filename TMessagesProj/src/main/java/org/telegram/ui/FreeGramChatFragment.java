@@ -92,7 +92,7 @@ public class FreeGramChatFragment extends BaseFragment {
             try {
                 JSONObject result = FreeGramApi.request("GET", "/v1/chats/" + chatId + "/messages", null, true);
                 JSONArray rows = result.optJSONArray("messages");
-                android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
                     if (messages == null) return;
                     messages.removeAllViews();
@@ -113,7 +113,7 @@ public class FreeGramChatFragment extends BaseFragment {
                     }
                 });
             } catch (Exception e) {
-                android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> { if (status != null) status.setText("Ошибка: " + e.getMessage()); });
             }
         });
@@ -124,7 +124,7 @@ public class FreeGramChatFragment extends BaseFragment {
             try {
                 JSONObject result = FreeGramApi.request("POST", "/v1/chats/" + chatId + "/invite", new JSONObject(), true);
                 String link = result.optString("invite_link", "");
-                android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
                     if (getParentActivity() == null || link.isEmpty()) return;
                     ClipboardManager clipboard = (ClipboardManager) getParentActivity().getSystemService(Context.CLIPBOARD_SERVICE);
@@ -132,7 +132,7 @@ public class FreeGramChatFragment extends BaseFragment {
                     status.setText("Ссылка-приглашение скопирована: " + link);
                 });
             } catch (Exception e) {
-                android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> { if (status != null) status.setText("Ссылка доступна только владельцу чата: " + e.getMessage()); });
             }
         });
@@ -147,7 +147,7 @@ public class FreeGramChatFragment extends BaseFragment {
                 JSONObject body = new JSONObject();
                 body.put("text", value);
                 FreeGramApi.request("POST", "/v1/chats/" + chatId + "/messages", body, true);
-                android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
                     if (composer == null) return;
                     composer.setText("");
@@ -155,7 +155,7 @@ public class FreeGramChatFragment extends BaseFragment {
                     loadMessages();
                 });
             } catch (Exception e) {
-                android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
                     if (composer != null) composer.setEnabled(true);
                     if (status != null) status.setText("Не отправлено: " + e.getMessage());

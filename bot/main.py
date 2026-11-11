@@ -53,12 +53,6 @@ def api_request(path, method="GET", data=None, secret_name=None):
         raise RuntimeError(f"API connection error: {e}")
 
 
-def main_keyboard():
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🆔 Получить FreeGram ID", callback_data="get_id")
-    ]])
-
-
 def owner_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📊 Статистика", callback_data="owner_status"),
@@ -178,23 +172,6 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user = query.from_user
-    if query.data == "get_id":
-        await query.edit_message_text("⏳ Запрашиваю регистрацию у FreeGram API...")
-        try:
-            result = await asyncio.to_thread(
-                api_request, "/v1/registrations", "POST",
-                {"telegram_id": user.id}, "bot")
-            await query.edit_message_text(
-                "✅ Регистрация FreeGram создана!\\n\\n"
-                f'🆔 FreeGram ID: {result["virtual_id"]}\\n'
-                f'🔐 Одноразовый код: {result["code"]}\\n\\n'
-                "Код действует 10 минут. Введи эти данные в приложении FreeGram.")
-        except Exception:
-            log.exception("Registration API error")
-            await query.edit_message_text(
-                "❌ Не удалось создать регистрацию. Сервер временно недоступен.")
-        return
-
     if user.id != OWNER_TELEGRAM_ID:
         await query.edit_message_text("⛔ Нет доступа.")
         return

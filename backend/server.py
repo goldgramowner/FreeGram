@@ -121,6 +121,7 @@ class ChatCreate(BaseModel):
     kind: str = Field(default="direct", pattern="^(direct|group|channel)$")
     title: str | None = Field(default=None, max_length=80)
     username: str | None = Field(default=None, min_length=5, max_length=24)
+    cover_url: str | None = Field(default=None, max_length=500)
 
 class MessageCreate(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
@@ -299,9 +300,9 @@ def create_chat(data: ChatCreate, authorization: str = Header(default="")):
                 raise HTTPException(400, "Chat username must be 5-24 letters, digits or _")
             invite_code = secrets.token_urlsafe(9)
             try:
-                cur=c.execute("""INSERT INTO chats(kind,title,username,invite_code,owner_user_id,created_at)
-                    VALUES(%s,%s,%s,%s,%s,%s) RETURNING id""",
-                    (data.kind,title,chat_username,invite_code,user["id"],now))
+                cur=c.execute("""INSERT INTO chats(kind,title,username,invite_code,cover_url,owner_user_id,created_at)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (data.kind,title,chat_username,invite_code,(data.cover_url or "").strip(),user["id"],now))
             except psycopg.errors.UniqueViolation:
                 raise HTTPException(409, "Chat username already taken")
             chat_id=cur.fetchone()["id"]

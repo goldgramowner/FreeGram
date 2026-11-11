@@ -380,6 +380,14 @@ public class FreeGramHomeFragment extends BaseFragment {
         });
     }
 
+    private String giftIcon(String code) {
+        if ("rose".equals(code)) return "🌹";
+        if ("heart".equals(code)) return "❤️";
+        if ("crown".equals(code)) return "👑";
+        if ("dragon".equals(code)) return "🐉";
+        return "🎁";
+    }
+
     private void showGiftShop() {
         executor.execute(() -> {
             try {
@@ -395,7 +403,7 @@ public class FreeGramHomeFragment extends BaseFragment {
                     String[] labels = new String[gifts.length()];
                     for (int i = 0; i < gifts.length(); i++) {
                         JSONObject gift = gifts.optJSONObject(i);
-                        labels[i] = gift.optString("title") + " · " + gift.optLong("price") + " Stars · " + gift.optString("rarity");
+                        labels[i] = giftIcon(gift.optString("code")) + "  " + gift.optString("title") + " · " + gift.optLong("price") + " Stars · " + gift.optString("rarity");
                     }
                     new AlertDialog.Builder(getParentActivity())
                         .setTitle("Подарки FreeGram")
@@ -444,7 +452,7 @@ public class FreeGramHomeFragment extends BaseFragment {
                     String[] labels = new String[gifts.length()];
                     for (int i = 0; i < gifts.length(); i++) {
                         JSONObject gift = gifts.optJSONObject(i);
-                        labels[i] = gift.optString("title") + " · " + gift.optString("rarity")
+                        labels[i] = giftIcon(gift.optString("code")) + "  " + gift.optString("title") + " · " + gift.optString("rarity")
                             + " · от @" + gift.optString("sender_username", "FreeGram");
                     }
                     new AlertDialog.Builder(getParentActivity()).setTitle("Мои подарки")

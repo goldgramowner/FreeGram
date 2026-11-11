@@ -202,7 +202,7 @@ public class FreeGramHomeFragment extends BaseFragment {
                         JSONObject result = FreeGramApi.request("POST", "/v1/chats", body, true);
                         long id = result.optLong("chat_id", -1);
                         android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
-                        main.post(() -> { if (id > 0) presentFragment(new FreeGramChatFragment(id, name)); loadChats(); });
+                        main.post(() -> { if (id > 0) presentFragment(new FreeGramChatFragment(id, name), true); loadChats(); });
                     } catch (Exception e) { showError(e); }
                 });
             }).show();

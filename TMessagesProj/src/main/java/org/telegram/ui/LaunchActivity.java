@@ -574,9 +574,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             if (!FreeGramApi.hasSession()) {
                 actionBarLayout.addFragmentToStack(new FreeGramAuthFragment());
             } else {
-                // FreeGram owns this session; do not request a Telegram phone login.
-                MainTabsActivity mainTabsActivity = new MainTabsActivity();
-                actionBarLayout.addFragmentToStack(mainTabsActivity);
+                // FreeGram has its own backend and native UI, not a Telegram account.
+                actionBarLayout.addFragmentToStack(new FreeGramHomeFragment());
             }
 
             try {

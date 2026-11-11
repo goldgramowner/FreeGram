@@ -177,11 +177,12 @@ public class FreeGramHomeFragment extends BaseFragment {
                 if (c == null) continue;
                 long id = c.optLong("id");
                 String kind = c.optString("kind");
-                String title = c.optString("title");
-                if ("direct".equals(kind)) title = "@" + c.optString("other_username", "пользователь");
-                if (title.isEmpty()) title = "FreeGram " + kind;
+                String rawTitle = c.optString("title");
+                final String chatTitle = "direct".equals(kind)
+                    ? "@" + c.optString("other_username", "пользователь")
+                    : (rawTitle.isEmpty() ? "FreeGram " + kind : rawTitle);
                 String last = c.optString("last_message", "Нет сообщений");
-                item(("channel".equals(kind) ? "▣ " : "● ") + title, last, () -> openChat(id, title));
+                item(("channel".equals(kind) ? "▣ " : "● ") + chatTitle, last, () -> openChat(id, chatTitle));
             }
         });
     }
@@ -198,7 +199,9 @@ public class FreeGramHomeFragment extends BaseFragment {
         box.addView(username);
         new AlertDialog.Builder(getParentActivity()).setTitle("Создать " + ("group".equals(kind) ? "группу" : "канал"))
             .setView(box).setNegativeButton("Отмена", null).setPositiveButton("Создать", (d, w) -> {
-                JSONObject body = obj("kind", kind, "title", title.getText().toString(), "username", username.getText().toString());
+                JSONObject body = obj("kind", kind, "title", title.getText().toString());
+                try { if (!username.getText().toString().trim().isEmpty()) body.put("username", username.getText().toString().trim()); }
+                catch (Exception ignored) {}
                 api("POST", "/v1/chats", body, (data, error) -> {
                     if (error != null) message(error.getMessage());
                     else {
@@ -292,7 +295,11 @@ public class FreeGramHomeFragment extends BaseFragment {
         new AlertDialog.Builder(getParentActivity()).setTitle(title + " · " + price + " Stars")
             .setMessage("Кому отправить подарок?")
             .setView(to).setNegativeButton("Отмена", null).setPositiveButton("Отправить", (d, w) -> {
-                JSONObject body = obj("gift_id", giftId, "to_username", to.getText().toString().trim().replace("@", ""));
+                JSONObject body = obj("gift_id", giftId);
+                try {
+                    String recipient = to.getText().toString().trim().replace("@", "");
+                    if (!recipient.isEmpty()) body.put("to_username", recipient);
+                } catch (Exception ignored) {}
                 api("POST", "/v1/gifts/buy", body, (data, error) -> {
                     if (error != null) message(error.getMessage());
                     else message("Подарок отправлен. Остаток: " + data.optLong("remaining_stars") + " Stars");

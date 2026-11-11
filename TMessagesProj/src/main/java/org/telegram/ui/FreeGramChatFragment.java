@@ -34,6 +34,8 @@ public class FreeGramChatFragment extends BaseFragment {
     private TextView status;
     private volatile boolean loadingMessages = false;
     private long lastMessageId = 0;
+    private long replyToId = 0;
+    private String replyToText = "";
 
     private final Runnable pollMessages = new Runnable() {
         @Override
@@ -160,7 +162,16 @@ public class FreeGramChatFragment extends BaseFragment {
                         TextView bubble = new TextView(getParentActivity());
                         String username = item.optString("username", "Користувач");
                         String body = item.optString("body", "");
-                        bubble.setText(username + "\n" + body);
+                        String replyBody = item.optString("reply_body", "");
+                        String edited = item.optString("edited_at", "");
+                        int reactionCount = item.optInt("reaction_count", 0);
+                        StringBuilder bubbleText = new StringBuilder(username);
+                        if (!replyBody.isEmpty()) bubbleText.append("\\n↳ ").append(item.optString("reply_username", "")).append(": ").append(replyBody);
+                        bubbleText.append("\\n").append(body);
+                        if (!edited.isEmpty()) bubbleText.append("  · изменено");
+                        if (reactionCount > 0) bubbleText.append("\\n👍 ").append(reactionCount);
+                        bubble.setText(bubbleText.toString());
+                        bubble.setOnLongClickListener(v -> { showMessageActions(item); return true; });
                         bubble.setTextColor(Color.rgb(30, 38, 48));
                         bubble.setTextSize(15);
                         bubble.setPadding(dp(getParentActivity(), 14), dp(getParentActivity(), 10),
@@ -180,6 +191,80 @@ public class FreeGramChatFragment extends BaseFragment {
                     if (status != null) status.setText("Помилка з'єднання: " +
                             (e.getMessage() == null ? "FreeGram API" : e.getMessage()));
                 });
+            }
+        });
+    }
+
+    private void showMessageActions(JSONObject item) {
+        if (getParentActivity() == null) return;
+        long id = item.optLong("id", 0);
+        boolean mine = item.optInt("is_mine", 0) == 1;
+        String[] actions = mine
+                ? new String[]{"Ответить", "👍 Реакция", "Изменить", "Удалить"}
+                : new String[]{"Ответить", "👍 Реакция"};
+        new AlertDialog.Builder(getParentActivity())
+                .setItems(actions, (dialog, which) -> {
+                    if (which == 0) {
+                        replyToId = id;
+                        replyToText = item.optString("body", "");
+                        if (composer != null) {
+                            composer.setHint("Ответ: " + replyToText);
+                            composer.requestFocus();
+                        }
+                        if (status != null) status.setText("Ответ на сообщение #" + id + " · нажмите отправить");
+                    } else if (which == 1) {
+                        toggleReaction(id, "👍");
+                    } else if (which == 2) {
+                        editMessage(item);
+                    } else if (which == 3) {
+                        new AlertDialog.Builder(getParentActivity())
+                                .setMessage("Удалить это сообщение?")
+                                .setNegativeButton("Отмена", null)
+                                .setPositiveButton("Удалить", (d, w) -> deleteMessage(id))
+                                .show();
+                    }
+                }).show();
+    }
+
+    private void editMessage(JSONObject item) {
+        EditText input = new EditText(getParentActivity());
+        input.setText(item.optString("body", ""));
+        new AlertDialog.Builder(getParentActivity())
+                .setTitle("Изменить сообщение")
+                .setView(input)
+                .setNegativeButton("Отмена", null)
+                .setPositiveButton("Сохранить", (dialog, which) -> executor.execute(() -> {
+                    try {
+                        JSONObject body = new JSONObject();
+                        body.put("text", input.getText().toString().trim());
+                        FreeGramApi.request("PATCH", "/v1/chats/" + chatId + "/messages/" + item.optLong("id"), body, true);
+                        mainHandler.post(() -> loadMessages(true));
+                    } catch (Exception e) {
+                        mainHandler.post(() -> { if (status != null) status.setText("Не удалось изменить: " + e.getMessage()); });
+                    }
+                })).show();
+    }
+
+    private void deleteMessage(long messageId) {
+        executor.execute(() -> {
+            try {
+                FreeGramApi.request("DELETE", "/v1/chats/" + chatId + "/messages/" + messageId, null, true);
+                mainHandler.post(() -> loadMessages(true));
+            } catch (Exception e) {
+                mainHandler.post(() -> { if (status != null) status.setText("Не удалось удалить: " + e.getMessage()); });
+            }
+        });
+    }
+
+    private void toggleReaction(long messageId, String reaction) {
+        executor.execute(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("reaction", reaction);
+                FreeGramApi.request("POST", "/v1/chats/" + chatId + "/messages/" + messageId + "/reactions", body, true);
+                mainHandler.post(() -> loadMessages(true));
+            } catch (Exception e) {
+                mainHandler.post(() -> { if (status != null) status.setText("Реакция не отправлена: " + e.getMessage()); });
             }
         });
     }
@@ -260,11 +345,15 @@ public class FreeGramChatFragment extends BaseFragment {
             try {
                 JSONObject body = new JSONObject();
                 body.put("text", value);
+                if (replyToId > 0) body.put("reply_to_id", replyToId);
                 FreeGramApi.request("POST", "/v1/chats/" + chatId + "/messages", body, true);
                 mainHandler.post(() -> {
                     if (composer == null) return;
                     composer.setText("");
+                    composer.setHint("Сообщение");
                     composer.setEnabled(true);
+                    replyToId = 0;
+                    replyToText = "";
                     loadMessages(false);
                 });
             } catch (Exception e) {

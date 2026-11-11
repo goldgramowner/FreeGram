@@ -90,7 +90,54 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=owner_keyboard())
     else:
         await update.message.reply_text(
-            "FreeGram Bot\\nБот управления FreeGram. Доступ к Owner Panel есть только у владельца.")
+            "FreeGram Bot\\nДля создания аккаунта используй /register. "
+            "Коды входа по виртуальному номеру +7 приходят сюда.")
+
+
+async def register_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_user = update.effective_user
+    try:
+        result = await asyncio.to_thread(
+            api_request, "/v1/registrations", "POST",
+            {"telegram_id": telegram_user.id}, "bot")
+        await update.message.reply_text(
+            "Аккаунт FreeGram создан.\\n"
+            f'ID: {result["virtual_id"]}\\n'
+            f'Код подтверждения: {result["code"]}\\n'
+            "Сохрани ID и передай его владельцу, чтобы получить виртуальный номер +7. "
+            "Код одноразовый и действует 10 минут.")
+    except Exception:
+        log.exception("User registration failed")
+        await update.message.reply_text("Не удалось создать аккаунт. Попробуй позже.")
+
+
+async def deliver_pending_codes(application):
+    while True:
+        try:
+            result = await asyncio.to_thread(
+                api_request, "/v1/bot/outbox", "GET", None, "bot")
+            for item in result.get("items", []):
+                try:
+                    await application.bot.send_message(
+                        chat_id=int(item["telegram_id"]),
+                        text=("Код входа в FreeGram\\n"
+                              f'Номер: {item["virtual_number"]}\\n'
+                              f'Код: {item["code"]}\\n'
+                              "Код действует 10 минут. Никому его не пересылай.")
+                    )
+                    await asyncio.to_thread(
+                        api_request,
+                        f'/v1/bot/outbox/{int(item["id"])}/sent',
+                        "POST", {}, "bot")
+                except Exception:
+                    log.exception("Could not deliver FreeGram login code")
+        except Exception:
+            log.exception("FreeGram outbox polling failed")
+        await asyncio.sleep(4)
+
+
+async def post_init(application):
+    application.create_task(deliver_pending_codes(application))
 
 
 async def owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -216,16 +263,17 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/label ID текст — назначить метку\\n"
             "/nft_set ID имя [rarity] — назначить NFT username\\n"
             "/nft_remove ID — снять NFT username\\n"
-            "/number_set ID +888... — назначить номер\\n"
-            "/number_generate ID — создать и назначить новый +888 номер\\n"
+            "/number_set ID +7XXXXXXXXXX — назначить номер\\n"
+            "/number_generate ID — создать и назначить новый +7 номер\\n"
             "/number_remove ID — снять номер\\n\\n"
             "Все изменения идут в общую PostgreSQL БД API.",
             reply_markup=owner_keyboard())
 
 
 def main():
-    telegram_app = Application.builder().token(BOT_TOKEN).build()
+    telegram_app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     telegram_app.add_handler(CommandHandler("start", start))
+    telegram_app.add_handler(CommandHandler("register", register_user))
     telegram_app.add_handler(CommandHandler("owner", owner))
     telegram_app.add_handler(CommandHandler("users", users))
     commands = [

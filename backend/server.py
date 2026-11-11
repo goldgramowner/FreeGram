@@ -140,6 +140,9 @@ class ChatUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=255)
     cover_url: str | None = Field(default=None, max_length=500)
 
+class ChatMemberAdd(BaseModel):
+    username: str = Field(min_length=5, max_length=24)
+
 class GiftSend(BaseModel):
     gift_code: str = Field(min_length=2, max_length=32)
     recipient_username: str = Field(min_length=5, max_length=24)
@@ -516,7 +519,27 @@ def chat_details(chat_id: int, authorization: str = Header(default="")):
             u.verified,u.label,u.nft_username
             FROM chat_members cm JOIN users u ON u.id=cm.user_id
             WHERE cm.chat_id=%s ORDER BY cm.joined_at LIMIT 200""", (chat_id,)).fetchall()
-    return {"ok": True, "chat": chat, "members": members}
+    return {"ok": True, "chat": chat, "members": members,
+            "is_owner": chat["owner_user_id"] == user["id"]}
+
+
+@app.post("/v1/chats/{chat_id}/members")
+def add_chat_member(chat_id: int, data: ChatMemberAdd, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    username = data.username.strip().lstrip("@").lower()
+    now = datetime.now(timezone.utc).isoformat()
+    with connect() as c:
+        chat = c.execute("SELECT id,owner_user_id,kind FROM chats WHERE id=%s", (chat_id,)).fetchone()
+        if not chat or chat["owner_user_id"] != user["id"]:
+            raise HTTPException(403, "Only chat owner can add members")
+        member = c.execute("""SELECT id,username FROM users
+            WHERE LOWER(username)=LOWER(%s) AND verified=1 AND banned=0""", (username,)).fetchone()
+        if not member:
+            raise HTTPException(404, "User not found")
+        c.execute("""INSERT INTO chat_members(chat_id,user_id,joined_at)
+            VALUES(%s,%s,%s) ON CONFLICT(chat_id,user_id) DO NOTHING""",
+            (chat_id,member["id"],now))
+    return {"ok": True, "username": member["username"]}
 
 
 @app.patch("/v1/chats/{chat_id}")

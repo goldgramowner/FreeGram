@@ -85,6 +85,11 @@ public class FreeGramHomeFragment extends BaseFragment {
                         row.setBackgroundColor(Color.WHITE);
                         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
                         lp.bottomMargin = 1;
+                        final long chatId = chat.optLong("id", -1);
+                        final String chatTitle = name;
+                        row.setOnClickListener(v -> {
+                            if (chatId > 0) presentFragment(new FreeGramChatFragment(chatId, chatTitle), true);
+                        });
                         list.addView(row, lp);
                     }
                 });

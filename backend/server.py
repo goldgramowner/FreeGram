@@ -64,6 +64,25 @@ def init_db():
         c.execute("ALTER TABLE chats ADD COLUMN IF NOT EXISTS cover_url TEXT NOT NULL DEFAULT ''")
         c.execute("ALTER TABLE chats ADD COLUMN IF NOT EXISTS invite_code TEXT")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS chats_invite_code_uq ON chats(invite_code) WHERE invite_code IS NOT NULL")
+        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS nft_rarity TEXT NOT NULL DEFAULT 'common'")
+        c.execute("""CREATE TABLE IF NOT EXISTS gift_types (
+            id BIGSERIAL PRIMARY KEY, code TEXT UNIQUE NOT NULL, title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '', price BIGINT NOT NULL CHECK(price >= 0),
+            image_url TEXT NOT NULL DEFAULT '', rarity TEXT NOT NULL DEFAULT 'common',
+            active INTEGER NOT NULL DEFAULT 1)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS user_gifts (
+            id BIGSERIAL PRIMARY KEY, gift_type_id BIGINT NOT NULL REFERENCES gift_types(id),
+            owner_user_id BIGINT NOT NULL REFERENCES users(id), sender_user_id BIGINT REFERENCES users(id),
+            chat_id BIGINT REFERENCES chats(id), created_at TEXT NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS user_gifts_owner_idx ON user_gifts(owner_user_id,id DESC)")
+        for gift in [
+            ("rose", "Роза", "Небольшой знак внимания", 15, "common"),
+            ("heart", "Сердце", "Подарок с теплом", 35, "common"),
+            ("crown", "Корона", "Особый подарок", 250, "rare"),
+            ("dragon", "Дракон", "Коллекционный подарок", 900, "epic"),
+        ]:
+            c.execute("""INSERT INTO gift_types(code,title,description,price,rarity)
+                VALUES(%s,%s,%s,%s,%s) ON CONFLICT(code) DO NOTHING""", gift)
 
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
@@ -110,6 +129,11 @@ class ChatUpdate(BaseModel):
     title: str | None = Field(default=None, max_length=80)
     description: str | None = Field(default=None, max_length=255)
     cover_url: str | None = Field(default=None, max_length=500)
+
+class GiftSend(BaseModel):
+    gift_code: str = Field(min_length=2, max_length=32)
+    recipient_username: str = Field(min_length=5, max_length=24)
+    chat_id: int | None = None
 
 class SearchQuery(BaseModel):
     query: str = Field(min_length=2, max_length=40)
@@ -210,7 +234,8 @@ def me(authorization: str = Header(default="")):
         raise HTTPException(401, "Authorization required")
     with connect() as c:
         user = c.execute("""SELECT virtual_id, username, telegram_id, verified, created_at,
-            banned, stars, label, nft_username, virtual_number
+            banned, stars, label, nft_username, nft_rarity, virtual_number,
+            display_name, bio, avatar_url
             FROM users WHERE token_hash=%s""", (digest(authorization[7:]),)).fetchone()
     if not user or not user["verified"] or user["banned"]:
         raise HTTPException(401, "Invalid session")
@@ -419,6 +444,66 @@ def join_by_invite(code: str, authorization: str = Header(default="")):
             (chat["id"], user["id"], now))
     return {"ok": True, "chat_id": chat["id"], "kind": chat["kind"]}
 
+
+@app.get("/v1/shop/gifts")
+def gift_catalog(authorization: str = Header(default="")):
+    authenticated_user(authorization)
+    with connect() as c:
+        rows = c.execute("""SELECT code,title,description,price,image_url,rarity
+            FROM gift_types WHERE active=1 ORDER BY price,id""").fetchall()
+    return {"ok": True, "gifts": rows}
+
+
+@app.get("/v1/shop/my-gifts")
+def my_gifts(authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    with connect() as c:
+        rows = c.execute("""SELECT ug.id,gt.code,gt.title,gt.description,gt.image_url,gt.rarity,
+            sender.username AS sender_username,ug.created_at
+            FROM user_gifts ug JOIN gift_types gt ON gt.id=ug.gift_type_id
+            LEFT JOIN users sender ON sender.id=ug.sender_user_id
+            WHERE ug.owner_user_id=%s ORDER BY ug.id DESC LIMIT 200""",
+            (user["id"],)).fetchall()
+    return {"ok": True, "gifts": rows}
+
+
+@app.post("/v1/shop/gifts/send")
+def send_gift(data: GiftSend, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    recipient_name = data.recipient_username.strip().lstrip("@").lower()
+    now = datetime.now(timezone.utc).isoformat()
+    with connect() as c:
+        recipient = c.execute("""SELECT id,username FROM users
+            WHERE LOWER(username)=LOWER(%s) AND verified=1 AND banned=0""",
+            (recipient_name,)).fetchone()
+        if not recipient:
+            raise HTTPException(404, "Recipient not found")
+        if recipient["id"] == user["id"]:
+            raise HTTPException(400, "You cannot send a gift to yourself")
+        gift = c.execute("SELECT id,price FROM gift_types WHERE code=%s AND active=1",
+                         (data.gift_code.lower(),)).fetchone()
+        if not gift:
+            raise HTTPException(404, "Gift not found")
+        if data.chat_id is not None:
+            member = c.execute("SELECT 1 FROM chat_members WHERE chat_id=%s AND user_id=%s",
+                               (data.chat_id, user["id"])).fetchone()
+            recipient_member = c.execute("SELECT 1 FROM chat_members WHERE chat_id=%s AND user_id=%s",
+                                         (data.chat_id, recipient["id"])).fetchone()
+            if not member or not recipient_member:
+                raise HTTPException(403, "Both users must be chat members")
+        balance = c.execute("SELECT stars FROM users WHERE id=%s FOR UPDATE",
+                            (user["id"],)).fetchone()["stars"]
+        if balance < gift["price"]:
+            raise HTTPException(400, "Not enough Stars")
+        c.execute("UPDATE users SET stars=stars-%s WHERE id=%s", (gift["price"], user["id"]))
+        cur = c.execute("""INSERT INTO user_gifts(gift_type_id,owner_user_id,sender_user_id,chat_id,created_at)
+            VALUES(%s,%s,%s,%s,%s) RETURNING id""",
+            (gift["id"], recipient["id"], user["id"], data.chat_id, now))
+        gift_id = cur.fetchone()["id"]
+    return {"ok": True, "gift_id": gift_id, "recipient": recipient["username"],
+            "spent_stars": gift["price"], "remaining_stars": balance - gift["price"]}
+
+
 @app.get("/v1/owner/status")
 def owner_status(x_owner_secret: str = Header(default="")):
     require_owner(x_owner_secret)
@@ -433,7 +518,7 @@ def owner_users(x_owner_secret: str = Header(default="")):
     require_owner(x_owner_secret)
     with connect() as c:
         rows = c.execute("""SELECT virtual_id, telegram_id, verified, banned,
-            stars, label, nft_username, virtual_number, created_at
+            stars, label, nft_username, nft_rarity, virtual_number, created_at
             FROM users ORDER BY id DESC LIMIT 200""").fetchall()
     return {"ok": True, "users": rows}
 
@@ -486,5 +571,5 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
         elif data.action == "number_remove":
             c.execute("UPDATE users SET virtual_number=NULL WHERE id=%s", (user["id"],))
         result = c.execute("""SELECT virtual_id, verified, banned, stars, label,
-            nft_username, virtual_number FROM users WHERE id=%s""", (user["id"],)).fetchone()
+            nft_username, nft_rarity, virtual_number FROM users WHERE id=%s""", (user["id"],)).fetchone()
     return {"ok": True, "user": result}

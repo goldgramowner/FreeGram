@@ -171,7 +171,11 @@ public class FreeGramAuthFragment extends BaseFragment {
                 android.os.Handler main = new android.os.Handler(context.getMainLooper());
                 main.post(() -> {
                     if (getParentActivity() == null) return;
-                    presentFragment(new FreeGramHomeFragment(), true);
+                    if (org.telegram.messenger.UserConfig.getInstance(org.telegram.messenger.UserConfig.selectedAccount).isClientActivated()) {
+                        presentFragment(new MainTabsActivity(), true);
+                    } else {
+                        presentFragment(new LoginActivity(), true);
+                    }
                 });
             } catch (Exception e) {
                 android.os.Handler main = new android.os.Handler(context.getMainLooper());

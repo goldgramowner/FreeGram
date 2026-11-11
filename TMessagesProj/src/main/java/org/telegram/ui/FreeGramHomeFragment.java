@@ -158,13 +158,45 @@ public class FreeGramHomeFragment extends BaseFragment {
                         String display = user.optString("display_name", "");
                         String label = user.optString("label", "");
                         String text = (display.isEmpty() ? username : display + "  @" + username) + (label.isEmpty() ? "" : "  ✓ " + label);
+                        String nft = user.optString("nft_username", "");
+                        if (!nft.isEmpty()) text += "\\nNFT · @" + nft;
                         TextView row = makeRow(text);
                         row.setOnClickListener(v -> openDirect(username));
+                        row.setOnLongClickListener(v -> { showUserProfile(username); return true; });
                         list.addView(row);
                     }
                     TextView back = makeRow("← Вернуться к чатам");
                     back.setOnClickListener(v -> loadChats());
                     list.addView(back);
+                });
+            } catch (Exception e) { showError(e); }
+        });
+    }
+
+    private void showUserProfile(String username) {
+        executor.execute(() -> {
+            try {
+                JSONObject result = FreeGramApi.request("GET",
+                        "/v1/users/" + URLEncoder.encode(username, "UTF-8"), null, true);
+                JSONObject user = result.optJSONObject("profile");
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> {
+                    if (getParentActivity() == null || user == null) return;
+                    String display = user.optString("display_name", "");
+                    StringBuilder info = new StringBuilder();
+                    info.append(display.isEmpty() ? username : display + "  @" + username);
+                    info.append("\\nFreeGram ID: ").append(user.optString("virtual_id", "—"));
+                    if (!user.optString("bio", "").isEmpty()) info.append("\\n\\n").append(user.optString("bio", ""));
+                    if (!user.optString("virtual_number", "").isEmpty()) info.append("\\n\\nНомер: ").append(user.optString("virtual_number", ""));
+                    if (!user.optString("nft_username", "").isEmpty()) info.append("\\nNFT: @").append(user.optString("nft_username", ""));
+                    if (!user.optString("label", "").isEmpty()) info.append("\\nМетка: ").append(user.optString("label", ""));
+                    if (user.optBoolean("verified", false)) info.append("\\n✓ Подтверждён");
+                    new AlertDialog.Builder(getParentActivity())
+                            .setTitle("Профиль пользователя")
+                            .setMessage(info.toString())
+                            .setNegativeButton("Закрыть", null)
+                            .setPositiveButton("Написать", (dialog, which) -> openDirect(username))
+                            .show();
                 });
             } catch (Exception e) { showError(e); }
         });

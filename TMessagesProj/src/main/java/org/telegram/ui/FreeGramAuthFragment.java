@@ -22,7 +22,7 @@ import java.util.concurrent.Executors;
 public class FreeGramAuthFragment extends BaseFragment {
     private static final String API_LOGIN = "/v1/auth/verify";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private EditText virtualId, code;
+    private EditText virtualNumber, code;
     private TextView status;
     private Button loginButton;
 
@@ -92,22 +92,21 @@ public class FreeGramAuthFragment extends BaseFragment {
         hint.setPadding(0, 0, 0, dp(context, 24));
         card.addView(hint, new LinearLayout.LayoutParams(-1, -2));
 
-        card.addView(label(context, "FREEGRAM ID"));
-        virtualId = new EditText(context);
-        virtualId.setSingleLine(true);
-        virtualId.setHint("FG-XXXXXXXXXX");
-        virtualId.setTextColor(Color.WHITE);
-        virtualId.setHintTextColor(Color.rgb(112, 130, 153));
-        virtualId.setTextSize(16);
-        virtualId.setInputType( android.text.InputType.TYPE_CLASS_TEXT
-                | android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
-                | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        virtualId.setPadding(dp(context, 14), 0, dp(context, 14), 0);
-        virtualId.setBackground(shape(Color.rgb(12, 20, 33), 12, context));
+        card.addView(label(context, "ВИРТУАЛЬНЫЙ НОМЕР FREEGRAM"));
+        virtualNumber = new EditText(context);
+        virtualNumber.setSingleLine(true);
+        virtualNumber.setHint("+1 202 555 0147");
+        virtualNumber.setText("+1");
+        virtualNumber.setTextColor(Color.WHITE);
+        virtualNumber.setHintTextColor(Color.rgb(112, 130, 153));
+        virtualNumber.setTextSize(16);
+        virtualNumber.setInputType(android.text.InputType.TYPE_CLASS_PHONE);
+        virtualNumber.setPadding(dp(context, 14), 0, dp(context, 14), 0);
+        virtualNumber.setBackground(shape(Color.rgb(12, 20, 33), 12, context));
         LinearLayout.LayoutParams idParams = new LinearLayout.LayoutParams(-1, dp(context, 54));
         idParams.topMargin = dp(context, 8);
         idParams.bottomMargin = dp(context, 18);
-        card.addView(virtualId, idParams);
+        card.addView(virtualNumber, idParams);
 
         card.addView(label(context, "ОДНОРАЗОВЫЙ КОД"));
         code = new EditText(context);
@@ -149,10 +148,10 @@ public class FreeGramAuthFragment extends BaseFragment {
     }
 
     private void verifyCode(Context context) {
-        String id = virtualId.getText().toString().trim().toUpperCase(java.util.Locale.US);
+        String number = virtualNumber.getText().toString().replaceAll("[\\s()-]", "").trim();
         String value = code.getText().toString().trim();
-        if (!id.matches("FG-[A-Z0-9]{6,32}") || !value.matches("[0-9]{6}")) {
-            status.setText("Проверь FreeGram ID и шестизначный код.");
+        if (!number.matches("\\+1[0-9]{10}") || !value.matches("[0-9]{6}")) {
+            status.setText("Введи номер +1 и шестизначный код из бота.");
             return;
         }
 
@@ -161,7 +160,7 @@ public class FreeGramAuthFragment extends BaseFragment {
         executor.execute(() -> {
             try {
                 JSONObject body = new JSONObject();
-                body.put("virtual_id", id);
+                body.put("virtual_number", number);
                 body.put("code", value);
                 JSONObject result = FreeGramApi.request("POST", API_LOGIN, body, false);
                 String token = result.optString("access_token", "");
@@ -171,11 +170,7 @@ public class FreeGramAuthFragment extends BaseFragment {
                 android.os.Handler main = new android.os.Handler(context.getMainLooper());
                 main.post(() -> {
                     if (getParentActivity() == null) return;
-                    if (org.telegram.messenger.UserConfig.getInstance(org.telegram.messenger.UserConfig.selectedAccount).isClientActivated()) {
-                        presentFragment(new MainTabsActivity(), true);
-                    } else {
-                        presentFragment(new LoginActivity(), true);
-                    }
+                    presentFragment(new MainTabsActivity(), true);
                 });
             } catch (Exception e) {
                 android.os.Handler main = new android.os.Handler(context.getMainLooper());

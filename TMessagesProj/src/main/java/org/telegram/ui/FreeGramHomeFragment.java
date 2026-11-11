@@ -3,15 +3,13 @@ package org.telegram.ui;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Color;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Typeface;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ImageView;
+import android.webkit.WebView;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -20,8 +18,6 @@ import org.json.JSONObject;
 import org.telegram.ui.ActionBar.BaseFragment;
 
 import java.net.URLEncoder;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -395,28 +391,14 @@ public class FreeGramHomeFragment extends BaseFragment {
         return "✦";
     }
 
-    private void loadGiftImage(ImageView target, String path) {
+    private void loadGiftImage(WebView target, String path) {
         if (path == null || path.isEmpty()) return;
-        executor.execute(() -> {
-            HttpURLConnection connection = null;
-            try {
-                String url = path.startsWith("http") ? path : FreeGramApi.BASE + path;
-                connection = (HttpURLConnection) new URL(url).openConnection();
-                connection.setConnectTimeout(12000);
-                connection.setReadTimeout(15000);
-                Bitmap bitmap;
-                try (java.io.InputStream input = connection.getInputStream()) {
-                    bitmap = BitmapFactory.decodeStream(input);
-                }
-                if (bitmap != null) {
-                    android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
-                    main.post(() -> { if (target.getParent() != null) target.setImageBitmap(bitmap); });
-                }
-            } catch (Exception ignored) {
-            } finally {
-                if (connection != null) connection.disconnect();
-            }
-        });
+        target.getSettings().setJavaScriptEnabled(false);
+        target.setVerticalScrollBarEnabled(false);
+        target.setHorizontalScrollBarEnabled(false);
+        target.setBackgroundColor(Color.TRANSPARENT);
+        String url = path.startsWith("http") ? path : FreeGramApi.BASE + path;
+        target.loadUrl(url);
     }
 
     private LinearLayout giftCard(JSONObject gift, boolean owned) {
@@ -425,8 +407,7 @@ public class FreeGramHomeFragment extends BaseFragment {
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(10, 9, 10, 9);
         card.setBackgroundColor(Color.WHITE);
-        ImageView art = new ImageView(getParentActivity());
-        art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        WebView art = new WebView(getParentActivity());
         art.setBackgroundColor(Color.rgb(224, 230, 245));
         card.addView(art, new LinearLayout.LayoutParams(88, 88));
         loadGiftImage(art, gift.optString("image_url", ""));
@@ -457,8 +438,7 @@ public class FreeGramHomeFragment extends BaseFragment {
         LinearLayout content = new LinearLayout(getParentActivity());
         content.setPadding(18, 8, 18, 8);
         content.setOrientation(LinearLayout.VERTICAL);
-        ImageView art = new ImageView(getParentActivity());
-        art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        WebView art = new WebView(getParentActivity());
         art.setBackgroundColor(Color.rgb(224, 230, 245));
         content.addView(art, new LinearLayout.LayoutParams(-1, 250));
         loadGiftImage(art, gift.optString("image_url", ""));

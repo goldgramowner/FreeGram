@@ -2,6 +2,8 @@ package org.telegram.ui;
 
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.view.Gravity;
@@ -326,6 +328,18 @@ public class FreeGramHomeFragment extends BaseFragment {
                     LinearLayout form = new LinearLayout(getParentActivity());
                     form.setPadding(22, 8, 22, 4);
                     form.setOrientation(LinearLayout.VERTICAL);
+                    String virtualId = me.optString("virtual_id", "");
+                    Button copyId = new Button(getParentActivity());
+                    copyId.setText("Скопировать FreeGram ID");
+                    copyId.setOnClickListener(v -> {
+                        ClipboardManager clipboard = (ClipboardManager) getParentActivity()
+                            .getSystemService(Context.CLIPBOARD_SERVICE);
+                        if (clipboard != null) {
+                            clipboard.setPrimaryClip(ClipData.newPlainText("FreeGram ID", virtualId));
+                            android.widget.Toast.makeText(getParentActivity(), "ID скопирован", android.widget.Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                    form.addView(copyId);
                     String number = me.optString("virtual_number", "");
                     String nft = me.optString("nft_username", "");
                     String rarity = me.optString("nft_rarity", "common");
@@ -360,7 +374,7 @@ public class FreeGramHomeFragment extends BaseFragment {
                     form.addView(bio);
                     form.addView(avatar);
                     new AlertDialog.Builder(getParentActivity())
-                        .setTitle("Профиль · " + me.optString("virtual_id", ""))
+                        .setTitle("Профиль · " + virtualId)
                         .setView(form)
                         .setNegativeButton("Закрыть", null)
                         .setPositiveButton("Сохранить", (d, w) -> executor.execute(() -> {

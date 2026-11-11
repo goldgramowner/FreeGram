@@ -81,8 +81,8 @@ class DirectLogin(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 class Verification(BaseModel):
-    virtual_id: str
-    code: str
+    virtual_number: str = Field(pattern=r"^\+1[0-9]{10}$")
+    code: str = Field(pattern=r"^[0-9]{6}$")
 
 class OwnerAction(BaseModel):
     virtual_id: str = Field(min_length=3, max_length=80)
@@ -152,26 +152,28 @@ def direct_login(data: DirectLogin):
 def register(data: Registration, x_bot_secret: str = Header(default="")):
     require_bot(x_bot_secret)
     virtual_id = "FG-" + secrets.token_hex(5).upper()
+    virtual_number = "+1" + "".join(str(secrets.randbelow(10)) for _ in range(10))
     code = "".join(str(secrets.randbelow(10)) for _ in range(6))
     salt = secrets.token_hex(16)
     now = datetime.now(timezone.utc)
     with connect() as c:
         c.execute("""INSERT INTO users
-            (telegram_id, virtual_id, otp_salt, otp_hash, otp_expires, verified, token_hash, created_at)
-            VALUES (%s,%s,%s,%s,%s,0,NULL,%s)
+            (telegram_id, virtual_id, virtual_number, otp_salt, otp_hash, otp_expires, verified, token_hash, created_at)
+            VALUES (%s,%s,%s,%s,%s,%s,0,NULL,%s)
             ON CONFLICT (telegram_id) DO UPDATE SET
-            virtual_id=EXCLUDED.virtual_id, otp_salt=EXCLUDED.otp_salt,
+            virtual_id=EXCLUDED.virtual_id, virtual_number=EXCLUDED.virtual_number, otp_salt=EXCLUDED.otp_salt,
             otp_hash=EXCLUDED.otp_hash, otp_expires=EXCLUDED.otp_expires,
             verified=0, token_hash=NULL""",
-            (data.telegram_id, virtual_id, salt, digest(salt + code),
+            (data.telegram_id, virtual_id, virtual_number, salt, digest(salt + code),
              (now + timedelta(minutes=10)).isoformat(), now.isoformat()))
-    return {"ok": True, "virtual_id": virtual_id, "code": code, "expires_in": 600}
+    return {"ok": True, "virtual_id": virtual_id, "virtual_number": virtual_number,
+            "code": code, "expires_in": 600}
 
 @app.post("/v1/auth/verify")
 def verify(data: Verification):
     now = datetime.now(timezone.utc)
     with connect() as c:
-        user = c.execute("SELECT * FROM users WHERE virtual_id=%s", (data.virtual_id.upper(),)).fetchone()
+        user = c.execute("SELECT * FROM users WHERE virtual_number=%s", (data.virtual_number,)).fetchone()
         if not user or not user["otp_hash"] or datetime.fromisoformat(user["otp_expires"]) < now:
             raise HTTPException(400, "Invalid ID or expired code")
         if not secrets.compare_digest(digest(user["otp_salt"] + data.code), user["otp_hash"]):
@@ -181,7 +183,8 @@ def verify(data: Verification):
         token = secrets.token_urlsafe(32)
         c.execute("""UPDATE users SET verified=1, otp_hash=NULL, otp_salt=NULL,
             otp_expires=NULL, token_hash=%s WHERE id=%s""", (digest(token), user["id"]))
-    return {"ok": True, "access_token": token, "token_type": "Bearer", "virtual_id": data.virtual_id.upper()}
+    return {"ok": True, "access_token": token, "token_type": "Bearer",
+            "virtual_id": user["virtual_id"], "virtual_number": data.virtual_number}
 
 @app.get("/v1/me")
 def me(authorization: str = Header(default="")):

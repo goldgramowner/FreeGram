@@ -34,6 +34,10 @@ def run_http_server():
     uvicorn.run(health_app, host="0.0.0.0",
                 port=int(os.environ.get("PORT", "10000")), log_level="info")
 
+def clean_text(value):
+    """Render escaped newlines from API strings as real Telegram line breaks."""
+    return str(value).replace(r"\r\n", "\n").replace(r"\n", "\n").replace(r"\t", "    ")
+
 
 def api_request(path, method="GET", data=None, secret_name=None):
     headers = {"Content-Type": "application/json"}
@@ -145,7 +149,7 @@ async def deliver_notifications(application):
                 try:
                     await application.bot.send_message(
                         chat_id=int(item["telegram_id"]),
-                        text=item["message"])
+                        text=clean_text(item["message"]))
                     await asyncio.to_thread(
                         api_request,
                         f'/v1/bot/notifications/{int(item["id"])}/sent',
@@ -275,20 +279,29 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                            reply_markup=owner_keyboard())
     elif query.data == "owner_help":
         await query.edit_message_text(
-            "🔐 Управление аккаунтами (только владелец):\n\n"
-            "/users — список аккаунтов\n"
-            "/ban ID, /unban ID — блокировка\n"
-            "/verify ID, /unverify ID — проверка\n"
-            "/stars_add ID число — добавить Stars\n"
-            "/stars_remove ID число — снять Stars\n"
-            "/stars_set ID число — установить баланс\n"
-            "/label ID текст — назначить метку\n"
-            "/nft_set ID имя [rarity] — назначить NFT username\n"
-            "/nft_remove ID — снять NFT username\n"
-            "/number_set ID +7XXXXXXXXXX — назначить номер\n"
-            "/number_generate ID — создать и назначить новый +7 номер\n"
-            "/number_remove ID — снять номер\n\n"
-            "Все изменения идут в общую PostgreSQL БД API.",
+            clean_text(
+                "🔐 ПАНЕЛЬ ВЛАДЕЛЬЦА\n\n"
+                "📊 АККАУНТЫ\n"
+                "/users — список аккаунтов\n\n"
+                "🛡️ БЕЗОПАСНОСТЬ\n"
+                "/ban ID — блокировка\n"
+                "/unban ID — разблокировка\n"
+                "/verify ID — выдать галочку\n"
+                "/unverify ID — снять галочку\n\n"
+                "⭐ STARS\n"
+                "/stars_add ID число — добавить\n"
+                "/stars_remove ID число — снять\n"
+                "/stars_set ID число — установить баланс\n\n"
+                "🏷️ МЕТКИ И NFT\n"
+                "/label ID текст — назначить метку\n"
+                "/nft_set ID имя rarity — назначить NFT username\n"
+                "/nft_remove ID — снять NFT username\n\n"
+                "📱 ВИРТУАЛЬНЫЕ НОМЕРА\n"
+                "/number_set ID +7XXXXXXXXXX — назначить номер\n"
+                "/number_generate ID — создать +7 номер\n"
+                "/number_remove ID — снять номер\n\n"
+                "Все изменения сохраняются в общей базе FreeGram."
+            ),
             reply_markup=owner_keyboard())
 
 

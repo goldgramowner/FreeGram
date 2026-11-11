@@ -148,16 +148,16 @@ public class FreeGramChatFragment extends BaseFragment {
                 StringBuilder info = new StringBuilder(chatTitle);
                 if (chat != null) {
                     String description = chat.optString("description", "");
-                    if (!description.isEmpty()) info.append("\\n\\n").append(description);
-                    info.append("\\n\\nТип: ").append(chat.optString("kind", "group"));
+                    if (!description.isEmpty()) info.append("\n\n").append(description);
+                    info.append("\n\nТип: ").append(chat.optString("kind", "group"));
                     String cover = chat.optString("cover_url", "");
-                    if (!cover.isEmpty()) info.append("\\nОбложка: задана");
+                    if (!cover.isEmpty()) info.append("\nОбложка: задана");
                 }
-                info.append("\\nУчастников: ").append(members == null ? 0 : members.length());
+                info.append("\nУчастников: ").append(members == null ? 0 : members.length());
                 if (members != null) {
                     for (int i = 0; i < members.length(); i++) {
                         JSONObject member = members.optJSONObject(i);
-                        if (member != null) info.append("\\n@").append(member.optString("username", "user"));
+                        if (member != null) info.append("\n@").append(member.optString("username", "user"));
                     }
                 }
                 String text = info.toString();

@@ -170,7 +170,7 @@ public class FreeGramAuthFragment extends BaseFragment {
                 android.os.Handler main = new android.os.Handler(context.getMainLooper());
                 main.post(() -> {
                     if (getParentActivity() == null) return;
-                    presentFragment(new MainTabsActivity(), true);
+                    presentFragment(new FreeGramHomeFragment(), true);
                 });
             } catch (Exception e) {
                 android.os.Handler main = new android.os.Handler(context.getMainLooper());

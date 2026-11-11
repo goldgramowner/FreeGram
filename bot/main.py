@@ -5,6 +5,7 @@ import logging
 import urllib.request
 import urllib.error
 import threading
+import time
 
 import uvicorn
 from fastapi import FastAPI
@@ -265,7 +266,11 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=owner_keyboard())
 
 
-def main():
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    log.error("Telegram update handler failed", exc_info=context.error)
+
+
+def build_application():
     telegram_app = Application.builder().token(BOT_TOKEN).build()
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("register", register_user))
@@ -280,11 +285,34 @@ def main():
     for name in commands:
         telegram_app.add_handler(CommandHandler(name, owner_command))
     telegram_app.add_handler(CallbackQueryHandler(on_button))
-    threading.Thread(target=run_http_server, daemon=True).start()
-    log.info("FreeGram Bot and HTTP server starting")
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    telegram_app.run_polling()
+    telegram_app.add_error_handler(error_handler)
+    return telegram_app
+
+
+def main():
+    threading.Thread(target=run_http_server, daemon=True, name="freegram-health").start()
+    log.info("FreeGram Bot health server starting")
+    while True:
+        telegram_app = build_application()
+        try:
+            log.info("Starting Telegram long polling")
+            telegram_app.run_polling(
+                poll_interval=1.0,
+                timeout=30,
+                bootstrap_retries=-1,
+                read_timeout=40,
+                write_timeout=30,
+                connect_timeout=30,
+                pool_timeout=30,
+                drop_pending_updates=False
+            )
+            log.error("Telegram polling stopped unexpectedly; restarting")
+        except KeyboardInterrupt:
+            log.info("Shutdown requested")
+            break
+        except Exception:
+            log.exception("Telegram polling crashed; restarting in 10 seconds")
+        time.sleep(10)
 
 
 if __name__ == "__main__":

@@ -61,7 +61,7 @@ def api_request(path, method="GET", data=None, secret_name=None):
 
 def main_keyboard():
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🆔 Получить FreeGram ID", callback_data="get_id")
+        InlineKeyboardButton("🇺🇸 Получить номер +1 и код", callback_data="get_id")
     ]])
 
 
@@ -98,7 +98,7 @@ async def owner_action(virtual_id, action, value=None):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Добро пожаловать в FreeGram!\n\\n"
-        "Нажми кнопку, чтобы получить ID и код входа в приложение.",
+        "Нажми кнопку, чтобы получить виртуальный номер +1 и код входа в приложение.",
         reply_markup=main_keyboard())
 
 

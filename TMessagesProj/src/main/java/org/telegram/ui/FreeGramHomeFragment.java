@@ -65,6 +65,10 @@ public class FreeGramHomeFragment extends BaseFragment {
         channel.setText("Новый канал");
         actions.addView(channel, new LinearLayout.LayoutParams(0, -2, 1));
         root.addView(actions);
+        Button gifts3d = new Button(context);
+        gifts3d.setText("🎁 NFT-подарки · 3D-витрина");
+        root.addView(gifts3d, new LinearLayout.LayoutParams(-1, -2));
+        gifts3d.setOnClickListener(v -> presentFragment(new FreeGramGift3DFragment(), true));
         group.setOnClickListener(v -> createNamedChat("group"));
         channel.setOnClickListener(v -> createNamedChat("channel"));
 

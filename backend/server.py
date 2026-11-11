@@ -742,6 +742,31 @@ def upgrade_gift(gift_id: int, authorization: str = Header(default="")):
             "rarity":levels[level],"spent_stars":cost,"remaining_stars":balance-cost}
 
 
+@app.post("/v1/shop/gifts/{code}/buy")
+def buy_gift_for_self(code: str, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    now = datetime.now(timezone.utc).isoformat()
+    with connect() as c:
+        gift = c.execute("""SELECT id,price,title FROM gift_types
+            WHERE code=%s AND active=1 FOR SHARE""", (code.lower(),)).fetchone()
+        if not gift:
+            raise HTTPException(404, "Gift not found")
+        balance = c.execute("SELECT stars FROM users WHERE id=%s FOR UPDATE",
+                            (user["id"],)).fetchone()["stars"]
+        price = int(gift["price"])
+        if balance < price:
+            raise HTTPException(400, "Not enough Stars")
+        c.execute("UPDATE users SET stars=stars-%s WHERE id=%s", (price,user["id"]))
+        cur = c.execute("""INSERT INTO user_gifts
+            (gift_type_id,owner_user_id,sender_user_id,created_at)
+            VALUES(%s,%s,%s,%s) RETURNING id""",
+            (gift["id"],user["id"],user["id"],now))
+        gift_id = cur.fetchone()["id"]
+        c.execute("UPDATE user_gifts SET serial_no=%s WHERE id=%s", (gift_id,gift_id))
+    return {"ok":True,"gift_id":gift_id,"title":gift["title"],
+            "spent_stars":price,"remaining_stars":balance-price}
+
+
 @app.post("/v1/shop/gifts/send")
 def send_gift(data: GiftSend, authorization: str = Header(default="")):
     user = authenticated_user(authorization)

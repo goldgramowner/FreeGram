@@ -445,15 +445,16 @@ public class FreeGramHomeFragment extends BaseFragment {
         TextView details = new TextView(getParentActivity());
         details.setPadding(0, 12, 0, 4);
         details.setText(gift.optString("description", "")
-            + "\\nКоллекция: " + gift.optString("collection", "FreeGram")
-            + "\\nРедкость: " + gift.optString("rarity", "common")
-            + ((gift.optInt("is_nft", 0) == 1) ? "\\nКоллекционный предмет FreeGram" : "")
-            + "\\nЦена: " + gift.optLong("price") + " Stars");
+            + "\nКоллекция: " + gift.optString("collection", "FreeGram")
+            + "\nРедкость: " + gift.optString("rarity", "common")
+            + ((gift.optInt("is_nft", 0) == 1) ? "\nКоллекционный предмет FreeGram" : "")
+            + "\nЦена: " + gift.optLong("price") + " Stars");
         details.setTextColor(Color.DKGRAY);
         content.addView(details);
         new AlertDialog.Builder(getParentActivity()).setTitle(gift.optString("title"))
             .setView(content)
             .setNegativeButton("Назад", null)
+            .setNeutralButton("Купить себе", (d,w) -> buyGiftForSelf(gift.optString("code"), gift.optString("title")))
             .setPositiveButton("Отправить", (d,w) -> sendGiftDialog(gift.optString("code"),gift.optString("title")))
             .show();
     }
@@ -486,6 +487,22 @@ public class FreeGramHomeFragment extends BaseFragment {
                     }
                     new AlertDialog.Builder(getParentActivity()).setTitle("NFT и подарки · " + gifts.length())
                         .setView(scroll).setNegativeButton("Закрыть", null).show();
+                });
+            } catch (Exception e) { showError(e); }
+        });
+    }
+
+    private void buyGiftForSelf(String giftCode, String giftTitle) {
+        executor.execute(() -> {
+            try {
+                JSONObject result = FreeGramApi.request("POST",
+                    "/v1/shop/gifts/" + URLEncoder.encode(giftCode, "UTF-8") + "/buy",
+                    new JSONObject(), true);
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> {
+                    if (status != null) status.setText("Куплено: " + giftTitle
+                        + " · осталось Stars: " + result.optLong("remaining_stars"));
+                    showMyGifts();
                 });
             } catch (Exception e) { showError(e); }
         });
@@ -539,9 +556,9 @@ public class FreeGramHomeFragment extends BaseFragment {
                         card.setOnClickListener(v -> {
                             int level = gift.optInt("upgrade_level", 0);
                             String message = gift.optString("description", "")
-                                + "\\nКоллекция: " + gift.optString("collection", "FreeGram")
-                                + "\\nУровень улучшения: " + level + "/3"
-                                + "\\nСерийный номер: " + gift.optLong("serial_no", gift.optLong("id"));
+                                + "\nКоллекция: " + gift.optString("collection", "FreeGram")
+                                + "\nУровень улучшения: " + level + "/3"
+                                + "\nСерийный номер: " + gift.optLong("serial_no", gift.optLong("id"));
                             new AlertDialog.Builder(getParentActivity()).setTitle(gift.optString("title"))
                                 .setMessage(message)
                                 .setNegativeButton("Закрыть", null)

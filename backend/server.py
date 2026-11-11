@@ -271,6 +271,9 @@ def bot_outbox_sent(item_id: int, x_bot_secret: str = Header(default="")):
 @app.post("/v1/auth/verify")
 def verify(data: Verification):
     now = datetime.now(timezone.utc)
+    failure = None
+    token = None
+    user = None
     with connect() as c:
         if data.virtual_number:
             if not re.fullmatch(r"\+7\d{10}", data.virtual_number.strip()):
@@ -283,17 +286,21 @@ def verify(data: Verification):
         else:
             raise HTTPException(400, "Virtual number or ID required")
         if not user or not user["otp_hash"] or not user["otp_expires"] or datetime.fromisoformat(user["otp_expires"]) < now:
-            raise HTTPException(400, "Invalid ID or expired code")
-        if int(user.get("otp_attempts") or 0) >= 5:
-            raise HTTPException(429, "Too many code attempts. Request a new code.")
-        if not secrets.compare_digest(digest(user["otp_salt"] + data.code), user["otp_hash"]):
+            failure = (400, "Invalid ID or expired code")
+        elif int(user.get("otp_attempts") or 0) >= 5:
+            failure = (429, "Too many code attempts. Request a new code.")
+        elif not secrets.compare_digest(digest(user["otp_salt"] + data.code), user["otp_hash"]):
             c.execute("UPDATE users SET otp_attempts=otp_attempts+1 WHERE id=%s", (user["id"],))
-            raise HTTPException(400, "Invalid ID or code")
-        if user["banned"]:
-            raise HTTPException(403, "Account banned")
-        token = secrets.token_urlsafe(32)
-        c.execute("""UPDATE users SET verified=1, otp_hash=NULL, otp_salt=NULL,
-            otp_expires=NULL, otp_attempts=0, token_hash=%s WHERE id=%s""", (digest(token), user["id"]))
+            failure = (400, "Invalid ID or code")
+        elif user["banned"]:
+            failure = (403, "Account banned")
+        else:
+            token = secrets.token_urlsafe(32)
+            c.execute("""UPDATE users SET verified=1, otp_hash=NULL, otp_salt=NULL,
+                otp_expires=NULL, otp_attempts=0, token_hash=%s WHERE id=%s""",
+                (digest(token), user["id"]))
+    if failure:
+        raise HTTPException(failure[0], failure[1])
     return {"ok": True, "access_token": token, "token_type": "Bearer",
             "virtual_id": user["virtual_id"], "virtual_number": user["virtual_number"]}
 

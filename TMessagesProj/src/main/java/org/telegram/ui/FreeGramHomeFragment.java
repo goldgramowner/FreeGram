@@ -467,7 +467,7 @@ public class FreeGramHomeFragment extends BaseFragment {
         details.setText(gift.optString("description", "")
             + "\\nКоллекция: " + gift.optString("collection", "FreeGram")
             + "\\nРедкость: " + gift.optString("rarity", "common")
-            + (gift.optBoolean("is_nft", false) ? "\\nКоллекционный предмет FreeGram" : "")
+            + ((gift.optInt("is_nft", 0) == 1) ? "\\nКоллекционный предмет FreeGram" : "")
             + "\\nЦена: " + gift.optLong("price") + " Stars");
         details.setTextColor(Color.DKGRAY);
         content.addView(details);

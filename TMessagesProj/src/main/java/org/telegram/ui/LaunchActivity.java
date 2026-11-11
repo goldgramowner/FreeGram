@@ -571,10 +571,12 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
         LiteMode.addOnPowerSaverAppliedListener(onPowerSaverCallback = this::onPowerSaver);
         if (actionBarLayout.getFragmentStack().isEmpty() && (layersActionBarLayout == null || layersActionBarLayout.getFragmentStack().isEmpty())) {
-            if (FreeGramApi.hasSession()) {
-                actionBarLayout.addFragmentToStack(new FreeGramHomeFragment());
-            } else {
+            if (!FreeGramApi.hasSession()) {
                 actionBarLayout.addFragmentToStack(new FreeGramAuthFragment());
+            } else if (UserConfig.getInstance(currentAccount).isClientActivated()) {
+                actionBarLayout.addFragmentToStack(new MainTabsActivity());
+            } else {
+                actionBarLayout.addFragmentToStack(new LoginActivity());
             }
 
             try {
@@ -1105,7 +1107,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private BaseFragment getClientNotActivatedFragment() {
-        return new FreeGramAuthFragment();
+        return new LoginActivity();
     }
 
     public FireworksOverlay getFireworksOverlay() {

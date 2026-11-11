@@ -75,6 +75,11 @@ def init_db():
             owner_user_id BIGINT NOT NULL REFERENCES users(id), sender_user_id BIGINT REFERENCES users(id),
             chat_id BIGINT REFERENCES chats(id), created_at TEXT NOT NULL)""")
         c.execute("CREATE INDEX IF NOT EXISTS user_gifts_owner_idx ON user_gifts(owner_user_id,id DESC)")
+        c.execute("""CREATE TABLE IF NOT EXISTS bot_outbox (
+            id BIGSERIAL PRIMARY KEY, telegram_id BIGINT NOT NULL,
+            virtual_number TEXT NOT NULL, code TEXT NOT NULL,
+            created_at TEXT NOT NULL, sent_at TEXT)""")
+        c.execute("CREATE INDEX IF NOT EXISTS bot_outbox_pending_idx ON bot_outbox(sent_at,id)")
         for gift in [
             ("rose", "Роза", "Небольшой знак внимания", 15, "common"),
             ("heart", "Сердце", "Подарок с теплом", 35, "common"),
@@ -109,6 +114,9 @@ class DirectLogin(BaseModel):
 class Verification(BaseModel):
     virtual_id: str
     code: str
+
+class VirtualNumberRequest(BaseModel):
+    virtual_number: str = Field(min_length=12, max_length=13)
 
 class OwnerAction(BaseModel):
     virtual_id: str = Field(min_length=3, max_length=80)
@@ -211,6 +219,54 @@ def register(data: Registration, x_bot_secret: str = Header(default="")):
             (data.telegram_id, virtual_id, salt, digest(salt + code),
              (now + timedelta(minutes=10)).isoformat(), now.isoformat()))
     return {"ok": True, "virtual_id": virtual_id, "code": code, "expires_in": 600}
+
+@app.post("/v1/auth/request-code")
+def request_virtual_number_code(data: VirtualNumberRequest):
+    number = data.virtual_number.strip()
+    if not re.fullmatch(r"\\+7\\d{10}", number):
+        raise HTTPException(400, "Введите виртуальный номер в формате +7XXXXXXXXXX")
+    now = datetime.now(timezone.utc)
+    code = "".join(str(secrets.randbelow(10)) for _ in range(6))
+    salt = secrets.token_hex(16)
+    with connect() as c:
+        user = c.execute("""SELECT id, telegram_id, banned, otp_expires
+            FROM users WHERE virtual_number=%s""", (number,)).fetchone()
+        # Keep responses identical for unknown, unlinked and blocked numbers.
+        if not user or user["telegram_id"] is None or user["banned"]:
+            return {"ok": True, "message": "Если номер активен, код придёт в FreeGram Bot."}
+        if user["otp_expires"]:
+            try:
+                previous_expiry = datetime.fromisoformat(user["otp_expires"])
+                if previous_expiry > now + timedelta(minutes=9):
+                    return {"ok": True, "message": "Если номер активен, код придёт в FreeGram Bot."}
+            except (TypeError, ValueError):
+                pass
+        c.execute("""UPDATE users SET otp_salt=%s, otp_hash=%s, otp_expires=%s,
+            verified=0, token_hash=NULL WHERE id=%s""",
+            (salt, digest(salt + code), (now + timedelta(minutes=10)).isoformat(), user["id"]))
+        c.execute("""INSERT INTO bot_outbox(telegram_id,virtual_number,code,created_at)
+            VALUES(%s,%s,%s,%s)""",
+            (user["telegram_id"], number, code, now.isoformat()))
+    return {"ok": True, "message": "Если номер активен, код придёт в FreeGram Bot."}
+
+
+@app.get("/v1/bot/outbox")
+def bot_outbox(x_bot_secret: str = Header(default="")):
+    require_bot(x_bot_secret)
+    with connect() as c:
+        rows = c.execute("""SELECT id,telegram_id,virtual_number,code
+            FROM bot_outbox WHERE sent_at IS NULL ORDER BY id LIMIT 20""").fetchall()
+    return {"ok": True, "items": rows}
+
+
+@app.post("/v1/bot/outbox/{item_id}/sent")
+def bot_outbox_sent(item_id: int, x_bot_secret: str = Header(default="")):
+    require_bot(x_bot_secret)
+    with connect() as c:
+        c.execute("UPDATE bot_outbox SET sent_at=%s WHERE id=%s AND sent_at IS NULL",
+                  (datetime.now(timezone.utc).isoformat(), item_id))
+    return {"ok": True}
+
 
 @app.post("/v1/auth/verify")
 def verify(data: Verification):
@@ -573,8 +629,10 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
             c.execute("UPDATE users SET nft_username=NULL WHERE id=%s", (user["id"],))
         elif data.action == "number_set":
             number = str(data.value or "").strip()
-            if not number.startswith("+888") or not number[1:].isdigit() or len(number) not in (12, 13, 14):
-                raise HTTPException(400, "Number must be a valid +888 virtual number")
+            valid_plus7 = bool(re.fullmatch(r"\\+7\\d{10}", number))
+            valid_legacy = bool(re.fullmatch(r"\\+888\\d{8,10}", number))
+            if not (valid_plus7 or valid_legacy):
+                raise HTTPException(400, "Number must be +7 followed by 10 digits")
             try: c.execute("UPDATE users SET virtual_number=%s WHERE id=%s", (number, user["id"]))
             except psycopg.errors.UniqueViolation: raise HTTPException(409, "Number already assigned")
         elif data.action == "number_remove":
@@ -582,7 +640,7 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
         elif data.action == "number_generate":
             number = None
             for _ in range(30):
-                candidate = "+888" + "".join(str(secrets.randbelow(10)) for _ in range(8))
+                candidate = "+7" + "".join(str(secrets.randbelow(10)) for _ in range(10))
                 if not c.execute("SELECT 1 FROM users WHERE virtual_number=%s", (candidate,)).fetchone():
                     number = candidate
                     break

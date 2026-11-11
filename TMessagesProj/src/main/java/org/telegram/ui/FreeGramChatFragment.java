@@ -11,6 +11,7 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.app.AlertDialog;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -26,6 +27,15 @@ public class FreeGramChatFragment extends BaseFragment {
     private LinearLayout messages;
     private EditText composer;
     private TextView status;
+    private final android.os.Handler pollHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable pollRunnable = new Runnable() {
+        @Override public void run() {
+            if (messages != null) {
+                loadMessages();
+                pollHandler.postDelayed(this, 5000);
+            }
+        }
+    };
 
     public FreeGramChatFragment(long id, String title) {
         chatId = id;
@@ -47,12 +57,20 @@ public class FreeGramChatFragment extends BaseFragment {
         title.setTextColor(Color.rgb(25, 35, 48));
         title.setTextSize(19);
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        Button info = new Button(context);
+        info.setText("ⓘ");
+        header.addView(info);
+        Button gift = new Button(context);
+        gift.setText("🎁");
+        header.addView(gift);
         Button invite = new Button(context);
         invite.setText("Ссылка");
         header.addView(invite);
         Button refresh = new Button(context);
-        refresh.setText("Обновить");
+        refresh.setText("↻");
         header.addView(refresh);
+        info.setOnClickListener(v -> showChatProfile());
+        gift.setOnClickListener(v -> showChatGifts());
         invite.setOnClickListener(v -> createInvite());
         root.addView(header);
 
@@ -84,6 +102,7 @@ public class FreeGramChatFragment extends BaseFragment {
         send.setOnClickListener(v -> sendMessage());
         fragmentView = root;
         loadMessages();
+        pollHandler.postDelayed(pollRunnable, 5000);
         return fragmentView;
     }
 
@@ -115,6 +134,95 @@ public class FreeGramChatFragment extends BaseFragment {
             } catch (Exception e) {
                 android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> { if (status != null) status.setText("Ошибка: " + e.getMessage()); });
+            }
+        });
+    }
+
+    private void showChatProfile() {
+        executor.execute(() -> {
+            try {
+                JSONObject result = FreeGramApi.request("GET", "/v1/chats/" + chatId, null, true);
+                JSONObject chat = result.optJSONObject("chat");
+                JSONArray members = result.optJSONArray("members");
+                StringBuilder info = new StringBuilder(chatTitle);
+                if (chat != null) {
+                    String description = chat.optString("description", "");
+                    if (!description.isEmpty()) info.append("\\n\\n").append(description);
+                    info.append("\\n\\nТип: ").append(chat.optString("kind", "group"));
+                }
+                info.append("\\nУчастников: ").append(members == null ? 0 : members.length());
+                if (members != null) {
+                    for (int i = 0; i < members.length(); i++) {
+                        JSONObject member = members.optJSONObject(i);
+                        if (member != null) info.append("\\n@").append(member.optString("username", "user"));
+                    }
+                }
+                String text = info.toString();
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> {
+                    if (getParentActivity() == null) return;
+                    new AlertDialog.Builder(getParentActivity()).setTitle("Профиль чата")
+                        .setMessage(text).setPositiveButton("Закрыть", null).show();
+                });
+            } catch (Exception e) {
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> { if (status != null) status.setText("Не удалось открыть профиль: " + e.getMessage()); });
+            }
+        });
+    }
+
+    private void showChatGifts() {
+        executor.execute(() -> {
+            try {
+                JSONObject me = FreeGramApi.request("GET", "/v1/me", null, true);
+                JSONObject details = FreeGramApi.request("GET", "/v1/chats/" + chatId, null, true);
+                JSONArray members = details.optJSONArray("members");
+                String myName = me.optString("username", "");
+                String recipient = "";
+                if (members != null) {
+                    for (int i = 0; i < members.length(); i++) {
+                        JSONObject member = members.optJSONObject(i);
+                        if (member != null && !member.optString("username", "").equalsIgnoreCase(myName)) {
+                            recipient = member.optString("username", "");
+                            break;
+                        }
+                    }
+                }
+                final String recipientName = recipient;
+                JSONObject catalog = FreeGramApi.request("GET", "/v1/shop/gifts", null, true);
+                JSONArray gifts = catalog.optJSONArray("gifts");
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> {
+                    if (getParentActivity() == null) return;
+                    if (recipientName.isEmpty() || gifts == null || gifts.length() == 0) {
+                        status.setText("В этом чате пока нельзя отправить подарок.");
+                        return;
+                    }
+                    String[] labels = new String[gifts.length()];
+                    for (int i = 0; i < gifts.length(); i++) {
+                        JSONObject item = gifts.optJSONObject(i);
+                        labels[i] = item.optString("title") + " · " + item.optLong("price") + " Stars · " + item.optString("rarity");
+                    }
+                    new AlertDialog.Builder(getParentActivity()).setTitle("Подарок для @" + recipientName)
+                        .setItems(labels, (dialog, which) -> executor.execute(() -> {
+                            try {
+                                JSONObject item = gifts.optJSONObject(which);
+                                JSONObject body = new JSONObject();
+                                body.put("gift_code", item.optString("code"));
+                                body.put("recipient_username", recipientName);
+                                body.put("chat_id", chatId);
+                                JSONObject sent = FreeGramApi.request("POST", "/v1/shop/gifts/send", body, true);
+                                android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
+                                h.post(() -> status.setText("Подарок отправлен · баланс: " + sent.optLong("remaining_stars") + " Stars"));
+                            } catch (Exception e) {
+                                android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
+                                h.post(() -> { if (status != null) status.setText("Не удалось отправить подарок: " + e.getMessage()); });
+                            }
+                        })).setNegativeButton("Закрыть", null).show();
+                });
+            } catch (Exception e) {
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> { if (status != null) status.setText("Ошибка магазина: " + e.getMessage()); });
             }
         });
     }
@@ -166,6 +274,7 @@ public class FreeGramChatFragment extends BaseFragment {
 
     @Override
     public void onFragmentDestroy() {
+        pollHandler.removeCallbacks(pollRunnable);
         executor.shutdownNow();
         messages = null;
         composer = null;

@@ -74,6 +74,8 @@ def init_db():
         c.execute("ALTER TABLE chats ADD COLUMN IF NOT EXISTS cover_url TEXT NOT NULL DEFAULT ''")
         c.execute("ALTER TABLE chats ADD COLUMN IF NOT EXISTS invite_code TEXT")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS chats_invite_code_uq ON chats(invite_code) WHERE invite_code IS NOT NULL")
+        c.execute("ALTER TABLE chats ADD COLUMN IF NOT EXISTS verified INTEGER NOT NULL DEFAULT 0")
+        c.execute("ALTER TABLE chats ADD COLUMN IF NOT EXISTS label TEXT NOT NULL DEFAULT ''")
         c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS nft_rarity TEXT NOT NULL DEFAULT 'common'")
         c.execute("""CREATE TABLE IF NOT EXISTS gift_types (
             id BIGSERIAL PRIMARY KEY, code TEXT UNIQUE NOT NULL, title TEXT NOT NULL,
@@ -135,6 +137,11 @@ class OwnerAction(BaseModel):
     virtual_id: str = Field(min_length=3, max_length=80)
     action: str
     value: str | int | None = None
+
+class OwnerChatAction(BaseModel):
+    chat_id: int
+    action: str
+    value: str | None = None
 class ChatCreate(BaseModel):
     kind: str = Field(default="direct", pattern="^(direct|group|channel)$")
     title: str | None = Field(default=None, max_length=80)
@@ -320,7 +327,7 @@ def list_chats(authorization: str = Header(default="")):
     user = authenticated_user(authorization)
     with connect() as c:
         rows = c.execute("""SELECT ch.id,ch.kind,ch.title,ch.description,ch.cover_url,
-            ch.invite_code,ch.created_at,
+            ch.invite_code,ch.created_at,ch.verified,ch.label,
             (SELECT m.body FROM messages m WHERE m.chat_id=ch.id ORDER BY m.id DESC LIMIT 1) AS last_message,
             (SELECT u.username FROM chat_members cm JOIN users u ON u.id=cm.user_id
              WHERE cm.chat_id=ch.id AND cm.user_id<>%s LIMIT 1) AS other_username,
@@ -518,7 +525,7 @@ def chat_details(chat_id: int, authorization: str = Header(default="")):
         if not member:
             raise HTTPException(404, "Chat not found")
         chat = c.execute("""SELECT id,kind,title,description,cover_url,invite_code,
-            owner_user_id,created_at FROM chats WHERE id=%s""", (chat_id,)).fetchone()
+            owner_user_id,created_at,verified,label FROM chats WHERE id=%s""", (chat_id,)).fetchone()
         members = c.execute("""SELECT u.virtual_id,u.username,u.display_name,u.avatar_url,
             u.verified,u.label,u.nft_username
             FROM chat_members cm JOIN users u ON u.id=cm.user_id
@@ -538,7 +545,7 @@ def update_chat(chat_id: int, data: ChatUpdate, authorization: str = Header(defa
             raise HTTPException(403, "Only chat owner can edit this chat")
         for key, value in fields.items():
             c.execute(f"UPDATE chats SET {key}=%s WHERE id=%s", (value or "", chat_id))
-        row = c.execute("SELECT id,kind,title,description,cover_url,invite_code FROM chats WHERE id=%s",
+        row = c.execute("SELECT id,kind,title,description,cover_url,invite_code,verified,label FROM chats WHERE id=%s",
                         (chat_id,)).fetchone()
     return {"ok": True, "chat": row}
 
@@ -697,6 +704,27 @@ def owner_status(x_owner_secret: str = Header(default="")):
         banned = c.execute("SELECT COUNT(*) AS n FROM users WHERE banned=1").fetchone()["n"]
     return {"ok": True, "total_users": total, "verified_users": verified, "banned_users": banned}
 
+@app.post("/v1/owner/chat-action")
+def owner_chat_action(data: OwnerChatAction, x_owner_secret: str = Header(default="")):
+    require_owner(x_owner_secret)
+    if data.action not in ("verify", "unverify", "label"):
+        raise HTTPException(400, "Action must be verify, unverify or label")
+    with connect() as c:
+        chat = c.execute("SELECT id,kind FROM chats WHERE id=%s", (data.chat_id,)).fetchone()
+        if not chat or chat["kind"] == "direct":
+            raise HTTPException(404, "Group or channel not found")
+        if data.action == "verify":
+            c.execute("UPDATE chats SET verified=1 WHERE id=%s", (data.chat_id,))
+        elif data.action == "unverify":
+            c.execute("UPDATE chats SET verified=0 WHERE id=%s", (data.chat_id,))
+        else:
+            label = str(data.value or "").strip()[:32]
+            c.execute("UPDATE chats SET label=%s WHERE id=%s", (label, data.chat_id))
+        result = c.execute("SELECT id,kind,title,verified,label FROM chats WHERE id=%s",
+                           (data.chat_id,)).fetchone()
+    return {"ok": True, "chat": result}
+
+
 @app.get("/v1/owner/users")
 def owner_users(x_owner_secret: str = Header(default="")):
     require_owner(x_owner_secret)
@@ -743,11 +771,10 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
             parts = raw.split("|", 1)
             name = parts[0].strip().lstrip("@").lower()
             rarity = parts[1].strip().lower() if len(parts) > 1 else "common"
-            if not name or len(name) > 32 or not name.replace("_", "").isalnum():
+            if not name or len(name) > 32 or not name.replace("_", "").replace(".", "").isalnum():
                 raise HTTPException(400, "Invalid NFT username")
-            if rarity not in ("common", "rare", "epic", "legendary"):
-                raise HTTPException(400, "Rarity must be common, rare, epic or legendary")
-            try: c.execute("UPDATE users SET nft_username=%s,nft_rarity=%s WHERE id=%s", (name, rarity, user["id"]))
+            # NFT usernames are collectible names; rarity belongs to gifts, not usernames.
+            try: c.execute("UPDATE users SET nft_username=%s,nft_rarity='' WHERE id=%s", (name, user["id"]))
             except psycopg.errors.UniqueViolation: raise HTTPException(409, "NFT username already assigned")
         elif data.action == "nft_remove":
             c.execute("UPDATE users SET nft_username=NULL WHERE id=%s", (user["id"],))

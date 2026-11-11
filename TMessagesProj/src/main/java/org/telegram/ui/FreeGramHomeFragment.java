@@ -114,7 +114,10 @@ public class FreeGramHomeFragment extends BaseFragment {
                         if (name.isEmpty()) name = chat.optString("other_username", "Личный чат");
                         String kind = chat.optString("kind", "direct");
                         String last = chat.optString("last_message", "");
-                        TextView row = makeRow((kind.equals("channel") ? "▣  " : kind.equals("group") ? "👥  " : "●  ") + name + (last.isEmpty() ? "" : "\n" + last));
+                        boolean verifiedChat = chat.optBoolean("verified", false);
+                        String chatLabel = chat.optString("label", "");
+                        String badge = verifiedChat ? "  ☑" + (chatLabel.isEmpty() ? "" : " " + chatLabel) : "";
+                        TextView row = makeRow((kind.equals("channel") ? "▣  " : kind.equals("group") ? "👥  " : "●  ") + name + badge + (last.isEmpty() ? "" : "\n" + last));
                         long id = chat.optLong("id", -1);
                         String chatTitle = name;
                         row.setOnClickListener(v -> { if (id > 0) presentFragment(new FreeGramChatFragment(id, chatTitle), true); });

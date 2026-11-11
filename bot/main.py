@@ -83,6 +83,12 @@ async def owner_action(virtual_id, action, value=None):
         {"virtual_id": virtual_id, "action": action, "value": value}, "owner"
     )
 
+async def owner_chat_action(chat_id, action, value=None):
+    return await asyncio.to_thread(
+        api_request, "/v1/owner/chat-action", "POST",
+        {"chat_id": chat_id, "action": action, "value": value}, "owner"
+    )
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_owner(update):
@@ -211,6 +217,47 @@ async def owner_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Не выполнено: {str(e)[:300]}")
 
 
+async def chat_owner_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await owner_only(update):
+        return
+    command = update.message.text.split()[0].split("@")[0].lstrip("/").lower()
+    args = context.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text("Формат: /chat_verify ID, /chat_unverify ID или /chat_label ID текст")
+        return
+    action = {"chat_verify":"verify", "chat_unverify":"unverify", "chat_label":"label"}[command]
+    value = " ".join(args[1:]) if action == "label" else None
+    if action == "label" and not value:
+        await update.message.reply_text("Формат: /chat_label ID текст")
+        return
+    try:
+        result = await owner_chat_action(int(args[0]), action, value)
+        chat = result["chat"]
+        await update.message.reply_text(
+            "Изменения сохранены.\\n"
+            f'ID: {chat["id"]} · {chat["title"]}\\n'
+            f'Галочка: {"есть" if chat["verified"] else "нет"}\\n'
+            f'Метка: {chat["label"] or "—"}'
+        )
+    except Exception as e:
+        await update.message.reply_text(f"Не выполнено: {str(e)[:250]}")
+
+
+async def chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await owner_only(update):
+        return
+    try:
+        result = await asyncio.to_thread(api_request, "/v1/owner/chats", "GET", None, "owner")
+        rows = result.get("chats", [])
+        lines = ["Группы и каналы FreeGram:"]
+        for chat in rows[:50]:
+            mark = "☑" if chat["verified"] else "—"
+            lines.append(f'{mark} #{chat["id"]} [{chat["kind"]}] {chat["title"]} · {chat["label"] or "без метки"}')
+        await update.message.reply_text("\\n".join(lines) if rows else "Групп и каналов пока нет.")
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка: {str(e)[:200]}")
+
+
 async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -284,6 +331,9 @@ def build_application():
     ]
     for name in commands:
         telegram_app.add_handler(CommandHandler(name, owner_command))
+    telegram_app.add_handler(CommandHandler("chats", chats))
+    for name in ("chat_verify", "chat_unverify", "chat_label"):
+        telegram_app.add_handler(CommandHandler(name, chat_owner_command))
     telegram_app.add_handler(CallbackQueryHandler(on_button))
     telegram_app.add_error_handler(error_handler)
     return telegram_app

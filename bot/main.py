@@ -90,7 +90,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=owner_keyboard())
     else:
         await update.message.reply_text(
-            "FreeGram Bot\\nДля регистрации: /register. Для повторного кода входа: /login FG-XXXXXXXXXX.")
+            "FreeGram Bot\nДля регистрации: /register. Для повторного кода входа: /login FG-XXXXXXXXXX.")
 
 
 async def register_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -101,9 +101,9 @@ async def register_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             {"telegram_id": telegram_user.id}, "bot"
         )
         await update.message.reply_text(
-            "Аккаунт FreeGram готов.\\n"
-            f'FreeGram ID: {result["virtual_id"]}\\n'
-            f'Код входа: {result["code"]}\\n'
+            "Аккаунт FreeGram готов.\n"
+            f'FreeGram ID: {result["virtual_id"]}\n'
+            f'Код входа: {result["code"]}\n'
             "Код действует 10 минут. Введи ID и код в приложении."
         )
     except Exception:
@@ -127,7 +127,7 @@ async def login_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
             {"virtual_id": virtual_id, "telegram_id": telegram_user.id}, "bot"
         )
         await update.message.reply_text(
-            f'Код входа в FreeGram: {result["code"]}\\n'
+            f'Код входа в FreeGram: {result["code"]}\n'
             "Код действует 10 минут. Никому его не пересылай."
         )
     except Exception as e:
@@ -159,7 +159,7 @@ async def users(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f'{state} {u["virtual_id"]} | ⭐ {u["stars"]} | '
                 f'метка: {u["label"] or "—"}'
             )
-        await update.message.reply_text("\\n".join(lines),
+        await update.message.reply_text("\n".join(lines),
                                          reply_markup=owner_keyboard())
     except Exception:
         log.exception("Owner users error")
@@ -196,13 +196,13 @@ async def owner_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = await owner_action(args[0], action, value)
         u = result["user"]
         await update.message.reply_text(
-            "✅ Изменения сохранены в общей БД FreeGram.\\n"
-            f'ID: {u["virtual_id"]}\\n'
-            f'Статус: {"заблокирован" if u["banned"] else "активен"}\\n'
-            f'Проверен: {"да" if u["verified"] else "нет"}\\n'
-            f'Stars: {u["stars"]}\\n'
-            f'Метка: {u["label"] or "—"}\\n'
-            f'NFT: {u["nft_username"] or "—"} ({u.get("nft_rarity", "common")})\\n'
+            "✅ Изменения сохранены в общей БД FreeGram.\n"
+            f'ID: {u["virtual_id"]}\n'
+            f'Статус: {"заблокирован" if u["banned"] else "активен"}\n'
+            f'Проверен: {"да" if u["verified"] else "нет"}\n'
+            f'Stars: {u["stars"]}\n'
+            f'Метка: {u["label"] or "—"}\n'
+            f'NFT: {u["nft_username"] or "—"} ({u.get("nft_rarity", "common")})\n'
             f'Номер: {u["virtual_number"] or "—"}'
         )
     except Exception as e:
@@ -222,9 +222,9 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             result = await asyncio.to_thread(api_request, "/v1/owner/status",
                                              "GET", None, "owner")
             await query.edit_message_text(
-                "🔐 FreeGram Owner Panel\\n\\n"
-                f'👥 Аккаунтов: {result["total_users"]}\\n'
-                f'✅ Подтверждено: {result["verified_users"]}\\n'
+                "🔐 FreeGram Owner Panel\n\n"
+                f'👥 Аккаунтов: {result["total_users"]}\n'
+                f'✅ Подтверждено: {result["verified_users"]}\n'
                 f'🚫 Заблокировано: {result["banned_users"]}',
                 reply_markup=owner_keyboard())
         except Exception:
@@ -240,7 +240,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for u in rows[:20]:
                 state = "🚫" if u["banned"] else ("✅" if u["verified"] else "⏳")
                 lines.append(f'{state} {u["virtual_id"]} | ⭐ {u["stars"]} | {u["label"] or "—"}')
-            await query.edit_message_text("\\n".join(lines) if rows else "Аккаунтов пока нет.",
+            await query.edit_message_text("\n".join(lines) if rows else "Аккаунтов пока нет.",
                                            reply_markup=owner_keyboard())
         except Exception:
             log.exception("Owner users callback error")
@@ -248,19 +248,19 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                            reply_markup=owner_keyboard())
     elif query.data == "owner_help":
         await query.edit_message_text(
-            "🔐 Управление аккаунтами (только владелец):\\n\\n"
-            "/users — список аккаунтов\\n"
-            "/ban ID, /unban ID — блокировка\\n"
-            "/verify ID, /unverify ID — проверка\\n"
-            "/stars_add ID число — добавить Stars\\n"
-            "/stars_remove ID число — снять Stars\\n"
-            "/stars_set ID число — установить баланс\\n"
-            "/label ID текст — назначить метку\\n"
-            "/nft_set ID имя [rarity] — назначить NFT username\\n"
-            "/nft_remove ID — снять NFT username\\n"
-            "/number_set ID +888... — назначить номер\\n"
-            "/number_generate ID — создать и назначить новый +888 номер\\n"
-            "/number_remove ID — снять номер\\n\\n"
+            "🔐 Управление аккаунтами (только владелец):\n\n"
+            "/users — список аккаунтов\n"
+            "/ban ID, /unban ID — блокировка\n"
+            "/verify ID, /unverify ID — проверка\n"
+            "/stars_add ID число — добавить Stars\n"
+            "/stars_remove ID число — снять Stars\n"
+            "/stars_set ID число — установить баланс\n"
+            "/label ID текст — назначить метку\n"
+            "/nft_set ID имя [rarity] — назначить NFT username\n"
+            "/nft_remove ID — снять NFT username\n"
+            "/number_set ID +888... — назначить номер\n"
+            "/number_generate ID — создать и назначить новый +888 номер\n"
+            "/number_remove ID — снять номер\n\n"
             "Все изменения идут в общую PostgreSQL БД API.",
             reply_markup=owner_keyboard())
 

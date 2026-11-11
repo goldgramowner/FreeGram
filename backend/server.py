@@ -131,9 +131,15 @@ class GiftPurchase(BaseModel):
     message: str = Field(default="", max_length=240)
 
 class ProfileUpdate(BaseModel):
+    username: str | None = Field(default=None, min_length=5, max_length=24)
     display_name: str = Field(default="", max_length=64)
     bio: str = Field(default="", max_length=160)
     avatar_url: str = Field(default="", max_length=500)
+
+class ChatUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=80)
+    username: str | None = Field(default=None, min_length=5, max_length=24)
+    cover_url: str | None = Field(default=None, max_length=500)
 
 
 @app.on_event("startup")
@@ -348,11 +354,18 @@ def search_users(q: str, authorization: str = Header(default="")):
 @app.put("/v1/me/profile")
 def update_profile(data: ProfileUpdate, authorization: str = Header(default="")):
     user = authenticated_user(authorization)
+    username = data.username.strip().lower() if data.username else None
+    if username and not re.fullmatch(r"[a-z0-9_]{5,24}", username):
+        raise HTTPException(400, "Username must be 5-24 letters, digits or _")
     with connect() as c:
-        row = c.execute("""UPDATE users SET display_name=%s,bio=%s,avatar_url=%s
-            WHERE id=%s RETURNING virtual_id,username,display_name,bio,avatar_url,
-            verified,label,nft_username,virtual_number,stars""",
-            (data.display_name.strip(), data.bio.strip(), data.avatar_url.strip(), user["id"])).fetchone()
+        try:
+            row = c.execute("""UPDATE users SET username=COALESCE(%s,username),
+                display_name=%s,bio=%s,avatar_url=%s WHERE id=%s
+                RETURNING virtual_id,username,display_name,bio,avatar_url,
+                verified,label,nft_username,virtual_number,stars""",
+                (username,data.display_name.strip(),data.bio.strip(),data.avatar_url.strip(),user["id"])).fetchone()
+        except psycopg.errors.UniqueViolation:
+            raise HTTPException(409, "Username already taken")
     return {"ok": True, "profile": row}
 
 @app.get("/v1/gifts")
@@ -408,6 +421,26 @@ def search_chats(q: str, authorization: str = Header(default="")):
             AND (username ILIKE %s OR title ILIKE %s) ORDER BY id DESC LIMIT 50""",
             (f"%{term}%",f"%{term}%")).fetchall()
     return {"ok":True,"chats":rows}
+
+@app.put("/v1/chats/{chat_id}")
+def update_chat(chat_id: int, data: ChatUpdate, authorization: str = Header(default="")):
+    user=authenticated_user(authorization)
+    username=data.username.strip().lstrip("@").lower() if data.username else None
+    if username and not re.fullmatch(r"[a-z0-9_]{5,24}", username):
+        raise HTTPException(400,"Chat username must be 5-24 letters, digits or _")
+    with connect() as c:
+        chat=c.execute("SELECT owner_user_id FROM chats WHERE id=%s",(chat_id,)).fetchone()
+        if not chat or chat["owner_user_id"]!=user["id"]:
+            raise HTTPException(403,"Only chat owner can edit it")
+        try:
+            row=c.execute("""UPDATE chats SET title=COALESCE(%s,title),
+                username=COALESCE(%s,username),cover_url=COALESCE(%s,cover_url)
+                WHERE id=%s RETURNING id,kind,title,username,cover_url,invite_code""",
+                (data.title.strip() if data.title else None,username,
+                 data.cover_url.strip() if data.cover_url else None,chat_id)).fetchone()
+        except psycopg.errors.UniqueViolation:
+            raise HTTPException(409,"Chat username already taken")
+    return {"ok":True,"chat":row}
 
 @app.post("/v1/chats/{chat_id}/invite")
 def create_chat_invite(chat_id: int, authorization: str = Header(default="")):

@@ -229,11 +229,31 @@ public class FreeGramHomeFragment extends BaseFragment {
                     EditText bio = new EditText(getParentActivity());
                     bio.setHint("О себе");
                     bio.setText(me.optString("bio", ""));
+                    EditText avatar = new EditText(getParentActivity());
+                    avatar.setSingleLine(true);
+                    avatar.setHint("Ссылка на фото профиля");
+                    avatar.setText(me.optString("avatar_url", ""));
+                    TextView accountInfo = new TextView(getParentActivity());
+                    StringBuilder details = new StringBuilder();
+                    details.append("FreeGram ID: ").append(me.optString("virtual_id", "—"));
+                    details.append("\\nНомер: ").append(me.optString("virtual_number", "не назначен"));
+                    details.append("\\nДополнительные номера: ").append(me.optJSONArray("additional_numbers") == null ? "—" : me.optJSONArray("additional_numbers").toString());
+                    details.append("\\nNFT-имена: ").append(me.optJSONArray("nft_usernames") == null ? "—" : me.optJSONArray("nft_usernames").toString());
+                    if (me.optBoolean("verified", false)) {
+                        details.append("\\n✓ Подтверждён");
+                        if (!me.optString("label", "").isEmpty()) details.append(" · ").append(me.optString("label"));
+                    }
+                    accountInfo.setText(details.toString());
+                    accountInfo.setTextSize(13);
+                    accountInfo.setTextColor(Color.rgb(85, 100, 120));
+                    accountInfo.setPadding(0, 8, 0, 12);
+                    form.addView(accountInfo);
                     form.addView(username);
                     form.addView(display);
                     form.addView(bio);
+                    form.addView(avatar);
                     new AlertDialog.Builder(getParentActivity())
-                        .setTitle("Профиль · " + me.optString("virtual_id", ""))
+                        .setTitle("Профиль FreeGram")
                         .setView(form)
                         .setNegativeButton("Закрыть", null)
                         .setPositiveButton("Сохранить", (d, w) -> executor.execute(() -> {
@@ -242,6 +262,7 @@ public class FreeGramHomeFragment extends BaseFragment {
                                 update.put("username", username.getText().toString().trim());
                                 update.put("display_name", display.getText().toString().trim());
                                 update.put("bio", bio.getText().toString().trim());
+                                update.put("avatar_url", avatar.getText().toString().trim());
                                 FreeGramApi.request("PATCH", "/v1/me", update, true);
                                 android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
                                 h.post(() -> status.setText("Профиль сохранён"));

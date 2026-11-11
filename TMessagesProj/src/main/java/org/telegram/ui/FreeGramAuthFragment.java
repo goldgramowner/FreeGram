@@ -87,7 +87,7 @@ public class FreeGramAuthFragment extends BaseFragment {
         card.addView(subtitle, new LinearLayout.LayoutParams(-1, -2));
 
         TextView instructions = new TextView(context);
-        instructions.setText("Открой @FreeGramNelpBot и отправь /register. Для повторного кода используй /login FG-XXXXXXXXXX.");
+        instructions.setText("Открой @FreeGramHbot и отправь /register. Для повторного кода используй /login FG-XXXXXXXXXX.");
         instructions.setTextColor(Color.rgb(105, 120, 140));
         instructions.setTextSize(13);
         instructions.setGravity(Gravity.CENTER);

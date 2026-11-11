@@ -239,7 +239,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/label ID текст — назначить метку\\n"
             "/nft_set ID имя — назначить NFT username\\n"
             "/nft_remove ID — снять NFT username\\n"
-            "/number_set ID +888... — назначить номер\\n"
+            "/number_set ID +1XXXXXXXXXX — назначить виртуальный номер\\n"
             "/number_remove ID — снять номер\\n\\n"
             "Все изменения идут в общую PostgreSQL БД API.",
             reply_markup=owner_keyboard())

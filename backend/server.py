@@ -661,6 +661,15 @@ def gift_art(code: str):
                          (code.lower(),)).fetchone()
     if not gift:
         raise HTTPException(404, "Gift not found")
+    icons = {
+        "rose":"🌹","heart":"❤️","crown":"👑","dragon":"🐉","pepe_frog":"🐸",
+        "redo_orbit":"🪐","starfall":"🌠","moon_cat":"🐈","pixel_fox":"🦊",
+        "crystal_heart":"💎","golden_duck":"🦆","cloud_puppy":"🐶","neon_skull":"🎭",
+        "sakura_box":"🌸","comet":"☄️","royal_ring":"💍","jellyfish":"🪼",
+        "volcano":"🌋","paper_crane":"🕊️","aurora_lamp":"🌌","mystic_key":"🗝️",
+        "red_rose_nft":"🥀","robot_buddy":"🤖","treasure_chest":"🧰"
+    }
+    icon=icons.get(code.lower(),"✦")
     palettes = {
         "petal":("#f8b4c8","#8f315e"),"ruby":("#ff5b76","#5d1539"),
         "gold":("#ffe08a","#9a5c0b"),"ember":("#ff9b54","#6f183d"),
@@ -683,7 +692,7 @@ def gift_art(code: str):
     <radialGradient id="r"><stop stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
     <rect width="640" height="640" rx="72" fill="url(#g)"/><circle cx="320" cy="270" r="210" fill="url(#r)"/>
     <circle cx="320" cy="270" r="142" fill="#ffffff" fill-opacity=".16" stroke="#fff" stroke-opacity=".65" stroke-width="5"/>
-    <path d="M320 145 L355 238 L455 245 L378 310 L402 410 L320 355 L238 410 L262 310 L185 245 L285 238 Z" fill="#fff" fill-opacity=".88"/>
+    <text x="320" y="345" text-anchor="middle" font-family="sans-serif" font-size="178">{icon}</text>
     <text x="320" y="510" text-anchor="middle" font-family="sans-serif" font-size="34" font-weight="700" fill="#fff">{title}</text>
     <text x="320" y="560" text-anchor="middle" font-family="sans-serif" font-size="22" letter-spacing="5" fill="#fff" fill-opacity=".85">{rarity}</text></svg>'''
     from fastapi.responses import Response
@@ -695,9 +704,12 @@ def my_gifts(authorization: str = Header(default="")):
     user = authenticated_user(authorization)
     with connect() as c:
         rows = c.execute("""SELECT ug.id,gt.code,gt.title,gt.description,gt.rarity,
-            gt.collection,gt.is_nft,gt.background,ug.upgrade_level,ug.serial_no,
+            gt.collection,gt.is_nft,gt.background,ug.upgrade_level,
+            CASE ug.upgrade_level WHEN 1 THEN 'rare' WHEN 2 THEN 'epic'
+                 WHEN 3 THEN 'legendary' ELSE gt.rarity END AS rarity,
+            COALESCE(ug.serial_no,ug.id) AS serial_no,
             sender.username AS sender_username,ug.created_at,
-            '/v1/shop/gifts/' || gt.code || '/art.svg' AS image_url
+            '/v1/shop/gifts/' || gt.code || '/art.svg?level=' || ug.upgrade_level AS image_url
             FROM user_gifts ug JOIN gift_types gt ON gt.id=ug.gift_type_id
             LEFT JOIN users sender ON sender.id=ug.sender_user_id
             WHERE ug.owner_user_id=%s ORDER BY ug.id DESC LIMIT 200""",

@@ -238,8 +238,15 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=owner_keyboard())
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """Log background/handler errors without silently losing diagnostics."""
+    log.error("Unhandled Telegram application error: %s",
+              context.error, exc_info=context.error)
+
+
 def main():
     telegram_app = Application.builder().token(BOT_TOKEN).build()
+    telegram_app.add_error_handler(error_handler)
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("owner", owner))
     telegram_app.add_handler(CommandHandler("users", users))

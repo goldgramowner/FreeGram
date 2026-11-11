@@ -57,6 +57,35 @@ def init_db():
             user_id BIGINT NOT NULL REFERENCES users(id), body TEXT NOT NULL,
             created_at TEXT NOT NULL)""")
         c.execute("CREATE INDEX IF NOT EXISTS messages_chat_id_idx ON messages(chat_id,id)")
+        for sql in [
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE chats ADD COLUMN IF NOT EXISTS username TEXT",
+            "ALTER TABLE chats ADD COLUMN IF NOT EXISTS invite_code TEXT",
+            "ALTER TABLE chats ADD COLUMN IF NOT EXISTS cover_url TEXT NOT NULL DEFAULT ''",
+        ]:
+            c.execute(sql)
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS chats_username_uq ON chats (LOWER(username)) WHERE username IS NOT NULL")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS chats_invite_code_uq ON chats (invite_code) WHERE invite_code IS NOT NULL")
+        c.execute("""CREATE TABLE IF NOT EXISTS gift_catalog (
+            gift_id TEXT PRIMARY KEY, title TEXT NOT NULL, emoji TEXT NOT NULL,
+            price BIGINT NOT NULL CHECK(price >= 0), rarity TEXT NOT NULL DEFAULT 'common',
+            image_url TEXT NOT NULL DEFAULT '')""")
+        c.execute("""CREATE TABLE IF NOT EXISTS user_gifts (
+            id BIGSERIAL PRIMARY KEY, gift_id TEXT NOT NULL REFERENCES gift_catalog(gift_id),
+            owner_user_id BIGINT NOT NULL REFERENCES users(id),
+            sender_user_id BIGINT NOT NULL REFERENCES users(id),
+            message TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)""")
+        for gift in [
+            ("rose", "Роза", "🌹", 15, "common"),
+            ("heart", "Сердце", "💝", 30, "common"),
+            ("teddy", "Мишка", "🧸", 75, "rare"),
+            ("crown", "Корона", "👑", 250, "epic"),
+            ("diamond", "Алмаз", "💎", 500, "legendary"),
+        ]:
+            c.execute("""INSERT INTO gift_catalog(gift_id,title,emoji,price,rarity)
+                VALUES(%s,%s,%s,%s,%s) ON CONFLICT(gift_id) DO NOTHING""", gift)
 
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
@@ -95,6 +124,16 @@ class ChatCreate(BaseModel):
 
 class MessageCreate(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+
+class GiftPurchase(BaseModel):
+    gift_id: str = Field(min_length=1, max_length=40)
+    to_username: str | None = Field(default=None, min_length=5, max_length=24)
+    message: str = Field(default="", max_length=240)
+
+class ProfileUpdate(BaseModel):
+    display_name: str = Field(default="", max_length=64)
+    bio: str = Field(default="", max_length=160)
+    avatar_url: str = Field(default="", max_length=500)
 
 
 @app.on_event("startup")
@@ -281,6 +320,109 @@ def send_message(chat_id: int, data: MessageCreate, authorization: str = Header(
         row=c.execute("""INSERT INTO messages(chat_id,user_id,body,created_at)
             VALUES(%s,%s,%s,%s) RETURNING id,body,created_at""",(chat_id,user["id"],body,now)).fetchone()
     return {"ok":True,"message":{**row,"username":user["username"],"virtual_id":user["virtual_id"]}}
+
+@app.get("/v1/search/users")
+def search_users(q: str, authorization: str = Header(default="")):
+    authenticated_user(authorization)
+    term = q.strip().lstrip("@")
+    if len(term) < 2:
+        raise HTTPException(400, "Enter at least 2 characters")
+    with connect() as c:
+        rows = c.execute("""SELECT virtual_id, username, display_name, bio, avatar_url,
+            verified, label, nft_username, virtual_number
+            FROM users WHERE verified=1 AND banned=0
+            AND (username ILIKE %s OR nft_username ILIKE %s OR display_name ILIKE %s)
+            ORDER BY username LIMIT 50""",
+            (f"%{term}%", f"%{term}%", f"%{term}%")).fetchall()
+    return {"ok": True, "users": rows}
+
+@app.put("/v1/me/profile")
+def update_profile(data: ProfileUpdate, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    with connect() as c:
+        row = c.execute("""UPDATE users SET display_name=%s,bio=%s,avatar_url=%s
+            WHERE id=%s RETURNING virtual_id,username,display_name,bio,avatar_url,
+            verified,label,nft_username,virtual_number,stars""",
+            (data.display_name.strip(), data.bio.strip(), data.avatar_url.strip(), user["id"])).fetchone()
+    return {"ok": True, "profile": row}
+
+@app.get("/v1/gifts")
+def gift_catalog(authorization: str = Header(default="")):
+    authenticated_user(authorization)
+    with connect() as c:
+        rows = c.execute("SELECT gift_id,title,emoji,price,rarity,image_url FROM gift_catalog ORDER BY price").fetchall()
+    return {"ok": True, "gifts": rows}
+
+@app.get("/v1/me/gifts")
+def my_gifts(authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    with connect() as c:
+        rows = c.execute("""SELECT ug.id,ug.message,ug.created_at,g.gift_id,g.title,g.emoji,
+            g.price,g.rarity,g.image_url,s.username AS sender_username
+            FROM user_gifts ug JOIN gift_catalog g ON g.gift_id=ug.gift_id
+            JOIN users s ON s.id=ug.sender_user_id
+            WHERE ug.owner_user_id=%s ORDER BY ug.id DESC""",(user["id"],)).fetchall()
+    return {"ok": True, "gifts": rows}
+
+@app.post("/v1/gifts/buy")
+def buy_gift(data: GiftPurchase, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    now = datetime.now(timezone.utc).isoformat()
+    with connect() as c:
+        gift = c.execute("SELECT gift_id,price FROM gift_catalog WHERE gift_id=%s",(data.gift_id,)).fetchone()
+        if not gift:
+            raise HTTPException(404, "Gift not found")
+        target = user
+        if data.to_username:
+            target = c.execute("""SELECT id,username FROM users WHERE LOWER(username)=LOWER(%s)
+                AND verified=1 AND banned=0""",(data.to_username.strip(),)).fetchone()
+            if not target:
+                raise HTTPException(404, "Recipient not found")
+        charged = c.execute("""UPDATE users SET stars=stars-%s WHERE id=%s AND stars >= %s
+            RETURNING stars""",(gift["price"],user["id"],gift["price"])).fetchone()
+        if not charged:
+            raise HTTPException(400, "Not enough FreeGram Stars")
+        row = c.execute("""INSERT INTO user_gifts(gift_id,owner_user_id,sender_user_id,message,created_at)
+            VALUES(%s,%s,%s,%s,%s) RETURNING id""",
+            (gift["gift_id"],target["id"],user["id"],data.message.strip(),now)).fetchone()
+    return {"ok":True,"gift_instance_id":row["id"],"remaining_stars":charged["stars"]}
+
+@app.get("/v1/search/chats")
+def search_chats(q: str, authorization: str = Header(default="")):
+    authenticated_user(authorization)
+    term=q.strip().lstrip("@")
+    if len(term)<2:
+        raise HTTPException(400,"Enter at least 2 characters")
+    with connect() as c:
+        rows=c.execute("""SELECT id,kind,title,username,cover_url,invite_code
+            FROM chats WHERE kind IN ('group','channel') AND username IS NOT NULL
+            AND (username ILIKE %s OR title ILIKE %s) ORDER BY id DESC LIMIT 50""",
+            (f"%{term}%",f"%{term}%")).fetchall()
+    return {"ok":True,"chats":rows}
+
+@app.post("/v1/chats/{chat_id}/invite")
+def create_chat_invite(chat_id: int, authorization: str = Header(default="")):
+    user=authenticated_user(authorization)
+    with connect() as c:
+        chat=c.execute("SELECT id,owner_user_id,invite_code FROM chats WHERE id=%s",(chat_id,)).fetchone()
+        member=c.execute("SELECT 1 FROM chat_members WHERE chat_id=%s AND user_id=%s",(chat_id,user["id"])).fetchone()
+        if not chat or not member or chat["owner_user_id"]!=user["id"]:
+            raise HTTPException(403,"Only chat owner can create an invite")
+        code=chat["invite_code"] or secrets.token_urlsafe(9)
+        c.execute("UPDATE chats SET invite_code=%s WHERE id=%s",(code,chat_id))
+    return {"ok":True,"invite_code":code,"invite_link":"https://freegram-x.onrender.com/join/"+code}
+
+@app.post("/v1/invites/{code}/join")
+def join_chat(code: str, authorization: str = Header(default="")):
+    user=authenticated_user(authorization)
+    now=datetime.now(timezone.utc).isoformat()
+    with connect() as c:
+        chat=c.execute("SELECT id FROM chats WHERE invite_code=%s",(code,)).fetchone()
+        if not chat:
+            raise HTTPException(404,"Invite not found")
+        c.execute("""INSERT INTO chat_members(chat_id,user_id,joined_at) VALUES(%s,%s,%s)
+            ON CONFLICT(chat_id,user_id) DO NOTHING""",(chat["id"],user["id"],now))
+    return {"ok":True,"chat_id":chat["id"]}
 
 @app.get("/v1/owner/status")
 def owner_status(x_owner_secret: str = Header(default="")):

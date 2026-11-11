@@ -287,8 +287,16 @@ def create_chat(data: ChatCreate, authorization: str = Header(default="")):
             title=(data.title or "").strip()
             if len(title)<1:
                 raise HTTPException(400, "Chat title required")
-            cur=c.execute("""INSERT INTO chats(kind,title,owner_user_id,created_at)
-                VALUES(%s,%s,%s,%s) RETURNING id""",(data.kind,title,user["id"],now))
+            chat_username = (data.username or "").strip().lstrip("@").lower() or None
+            if chat_username and not re.fullmatch(r"[a-z0-9_]{5,24}", chat_username):
+                raise HTTPException(400, "Chat username must be 5-24 letters, digits or _")
+            invite_code = secrets.token_urlsafe(9)
+            try:
+                cur=c.execute("""INSERT INTO chats(kind,title,username,invite_code,owner_user_id,created_at)
+                    VALUES(%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (data.kind,title,chat_username,invite_code,user["id"],now))
+            except psycopg.errors.UniqueViolation:
+                raise HTTPException(409, "Chat username already taken")
             chat_id=cur.fetchone()["id"]
             c.execute("INSERT INTO chat_members(chat_id,user_id,joined_at) VALUES(%s,%s,%s)",
                       (chat_id,user["id"],now))

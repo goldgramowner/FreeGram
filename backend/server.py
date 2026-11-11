@@ -57,6 +57,13 @@ def init_db():
             user_id BIGINT NOT NULL REFERENCES users(id), body TEXT NOT NULL,
             created_at TEXT NOT NULL)""")
         c.execute("CREATE INDEX IF NOT EXISTS messages_chat_id_idx ON messages(chat_id,id)")
+        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT NOT NULL DEFAULT ''")
+        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT ''")
+        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT ''")
+        c.execute("ALTER TABLE chats ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''")
+        c.execute("ALTER TABLE chats ADD COLUMN IF NOT EXISTS cover_url TEXT NOT NULL DEFAULT ''")
+        c.execute("ALTER TABLE chats ADD COLUMN IF NOT EXISTS invite_code TEXT")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS chats_invite_code_uq ON chats(invite_code) WHERE invite_code IS NOT NULL")
 
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
@@ -92,6 +99,20 @@ class ChatCreate(BaseModel):
     kind: str = Field(default="direct", pattern="^(direct|group|channel)$")
     title: str | None = Field(default=None, max_length=80)
     username: str | None = Field(default=None, min_length=5, max_length=24)
+
+class ProfileUpdate(BaseModel):
+    username: str | None = Field(default=None, min_length=5, max_length=24)
+    display_name: str | None = Field(default=None, max_length=64)
+    bio: str | None = Field(default=None, max_length=160)
+    avatar_url: str | None = Field(default=None, max_length=500)
+
+class ChatUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=80)
+    description: str | None = Field(default=None, max_length=255)
+    cover_url: str | None = Field(default=None, max_length=500)
+
+class SearchQuery(BaseModel):
+    query: str = Field(min_length=2, max_length=40)
 
 class MessageCreate(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
@@ -278,6 +299,125 @@ def send_message(chat_id: int, data: MessageCreate, authorization: str = Header(
         row=c.execute("""INSERT INTO messages(chat_id,user_id,body,created_at)
             VALUES(%s,%s,%s,%s) RETURNING id,body,created_at""",(chat_id,user["id"],body,now)).fetchone()
     return {"ok":True,"message":{**row,"username":user["username"],"virtual_id":user["virtual_id"]}}
+
+
+@app.patch("/v1/me")
+def update_me(data: ProfileUpdate, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    fields = data.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(400, "No profile changes supplied")
+    if "username" in fields and fields["username"] is not None:
+        name = fields["username"].strip().lower()
+        if not re.fullmatch(r"[a-z0-9_]{5,24}", name):
+            raise HTTPException(400, "Username: 5-24 латинских букв, цифр или _")
+        with connect() as c:
+            other = c.execute("SELECT id FROM users WHERE LOWER(username)=LOWER(%s) AND id<>%s",
+                              (name, user["id"])).fetchone()
+            if other:
+                raise HTTPException(409, "Username already taken")
+            fields["username"] = name
+    allowed = {"username", "display_name", "bio", "avatar_url"}
+    if not set(fields).issubset(allowed):
+        raise HTTPException(400, "Unsupported profile field")
+    with connect() as c:
+        for key, value in fields.items():
+            c.execute(f"UPDATE users SET {key}=%s WHERE id=%s", (value or "", user["id"]))
+        row = c.execute("""SELECT virtual_id,username,display_name,bio,avatar_url,
+            verified,label,nft_username,virtual_number,stars FROM users WHERE id=%s""",
+            (user["id"],)).fetchone()
+    return {"ok": True, "profile": row}
+
+
+@app.get("/v1/users/search")
+def search_users(q: str, authorization: str = Header(default="")):
+    authenticated_user(authorization)
+    q = q.strip().lstrip("@").lower()
+    if len(q) < 2 or len(q) > 40:
+        raise HTTPException(400, "Search query must contain 2-40 characters")
+    with connect() as c:
+        rows = c.execute("""SELECT virtual_id,username,display_name,bio,avatar_url,
+            verified,label,nft_username,virtual_number
+            FROM users WHERE verified=1 AND banned=0
+            AND (LOWER(username) LIKE %s OR LOWER(nft_username) LIKE %s
+                 OR LOWER(display_name) LIKE %s)
+            ORDER BY verified DESC, username LIMIT 30""",
+            (f"%{q}%", f"%{q}%", f"%{q}%")).fetchall()
+    return {"ok": True, "users": rows}
+
+
+@app.get("/v1/users/{username}")
+def get_user_profile(username: str, authorization: str = Header(default="")):
+    authenticated_user(authorization)
+    name = username.strip().lstrip("@").lower()
+    with connect() as c:
+        row = c.execute("""SELECT virtual_id,username,display_name,bio,avatar_url,
+            verified,label,nft_username,virtual_number
+            FROM users WHERE LOWER(username)=LOWER(%s) AND verified=1 AND banned=0""",
+            (name,)).fetchone()
+    if not row:
+        raise HTTPException(404, "User not found")
+    return {"ok": True, "profile": row}
+
+
+@app.get("/v1/chats/{chat_id}")
+def chat_details(chat_id: int, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    with connect() as c:
+        member = c.execute("SELECT 1 FROM chat_members WHERE chat_id=%s AND user_id=%s",
+                           (chat_id, user["id"])).fetchone()
+        if not member:
+            raise HTTPException(404, "Chat not found")
+        chat = c.execute("""SELECT id,kind,title,description,cover_url,invite_code,
+            owner_user_id,created_at FROM chats WHERE id=%s""", (chat_id,)).fetchone()
+        members = c.execute("""SELECT u.virtual_id,u.username,u.display_name,u.avatar_url,
+            u.verified,u.label,u.nft_username
+            FROM chat_members cm JOIN users u ON u.id=cm.user_id
+            WHERE cm.chat_id=%s ORDER BY cm.joined_at LIMIT 200""", (chat_id,)).fetchall()
+    return {"ok": True, "chat": chat, "members": members}
+
+
+@app.patch("/v1/chats/{chat_id}")
+def update_chat(chat_id: int, data: ChatUpdate, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    fields = data.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(400, "No chat changes supplied")
+    with connect() as c:
+        chat = c.execute("SELECT owner_user_id,kind FROM chats WHERE id=%s", (chat_id,)).fetchone()
+        if not chat or chat["owner_user_id"] != user["id"]:
+            raise HTTPException(403, "Only chat owner can edit this chat")
+        for key, value in fields.items():
+            c.execute(f"UPDATE chats SET {key}=%s WHERE id=%s", (value or "", chat_id))
+        row = c.execute("SELECT id,kind,title,description,cover_url,invite_code FROM chats WHERE id=%s",
+                        (chat_id,)).fetchone()
+    return {"ok": True, "chat": row}
+
+
+@app.post("/v1/chats/{chat_id}/invite")
+def refresh_chat_invite(chat_id: int, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    with connect() as c:
+        chat = c.execute("SELECT owner_user_id,kind FROM chats WHERE id=%s", (chat_id,)).fetchone()
+        if not chat or chat["owner_user_id"] != user["id"]:
+            raise HTTPException(403, "Only chat owner can create invite links")
+        code = secrets.token_urlsafe(9)
+        c.execute("UPDATE chats SET invite_code=%s WHERE id=%s", (code, chat_id))
+    return {"ok": True, "invite_code": code, "invite_link": "https://freegram-x.onrender.com/i/" + code}
+
+
+@app.post("/v1/invites/{code}/join")
+def join_by_invite(code: str, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    now = datetime.now(timezone.utc).isoformat()
+    with connect() as c:
+        chat = c.execute("SELECT id,kind FROM chats WHERE invite_code=%s", (code,)).fetchone()
+        if not chat:
+            raise HTTPException(404, "Invite link is invalid or revoked")
+        c.execute("""INSERT INTO chat_members(chat_id,user_id,joined_at)
+            VALUES(%s,%s,%s) ON CONFLICT(chat_id,user_id) DO NOTHING""",
+            (chat["id"], user["id"], now))
+    return {"ok": True, "chat_id": chat["id"], "kind": chat["kind"]}
 
 @app.get("/v1/owner/status")
 def owner_status(x_owner_secret: str = Header(default="")):

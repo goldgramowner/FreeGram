@@ -132,7 +132,7 @@ async def owner_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     command = update.message.text.split()[0].split("@")[0].lstrip("/").lower()
     args = context.args
-    if command in ("ban", "unban", "verify", "unverify", "nft_remove", "number_remove"):
+    if command in ("ban", "unban", "verify", "unverify", "nft_remove", "number_remove", "number_generate"):
         if len(args) != 1:
             await update.message.reply_text(f"Формат: /{command} FG-XXXXXXXXXX")
             return
@@ -230,9 +230,10 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/stars_remove ID число — снять Stars\\n"
             "/stars_set ID число — установить баланс\\n"
             "/label ID текст — назначить метку\\n"
-            "/nft_set ID имя — назначить NFT username\\n"
+            "/nft_set ID имя [rarity] — назначить NFT username\\n"
             "/nft_remove ID — снять NFT username\\n"
             "/number_set ID +888... — назначить номер\\n"
+            "/number_generate ID — создать и назначить новый +888 номер\\n"
             "/number_remove ID — снять номер\\n\\n"
             "Все изменения идут в общую PostgreSQL БД API.",
             reply_markup=owner_keyboard())

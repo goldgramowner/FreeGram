@@ -22,7 +22,7 @@ import java.util.concurrent.Executors;
 public class FreeGramAuthFragment extends BaseFragment {
     private static final String API_LOGIN = "/v1/auth/verify";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private EditText virtualNumber, code;
+    private EditText virtualId, code;
     private TextView status;
     private Button loginButton;
 
@@ -85,28 +85,28 @@ public class FreeGramAuthFragment extends BaseFragment {
         card.addView(subtitle, new LinearLayout.LayoutParams(-1, -2));
 
         TextView hint = new TextView(context);
-        hint.setText("Открой @FreeGramNelpBot, нажми Start и получи номер +1 и одноразовый код.");
+        hint.setText("Открой @FreeGramNelpBot, нажми Start и получи FreeGram ID и одноразовый код.");
         hint.setTextColor(Color.rgb(151, 167, 188));
         hint.setTextSize(13);
         hint.setGravity(Gravity.CENTER);
         hint.setPadding(0, 0, 0, dp(context, 24));
         card.addView(hint, new LinearLayout.LayoutParams(-1, -2));
 
-        card.addView(label(context, "ВИРТУАЛЬНЫЙ НОМЕР FREEGRAM"));
-        virtualNumber = new EditText(context);
-        virtualNumber.setSingleLine(true);
-        virtualNumber.setHint("+1 202 555 0147");
-        virtualNumber.setText("+1");
-        virtualNumber.setTextColor(Color.WHITE);
-        virtualNumber.setHintTextColor(Color.rgb(112, 130, 153));
-        virtualNumber.setTextSize(16);
-        virtualNumber.setInputType(android.text.InputType.TYPE_CLASS_PHONE);
-        virtualNumber.setPadding(dp(context, 14), 0, dp(context, 14), 0);
-        virtualNumber.setBackground(shape(Color.rgb(12, 20, 33), 12, context));
+        card.addView(label(context, "FREEGRAM ID"));
+        virtualId = new EditText(context);
+        virtualId.setSingleLine(true);
+        virtualId.setHint("FG-XXXXXXXXXX");
+        
+        virtualId.setTextColor(Color.WHITE);
+        virtualId.setHintTextColor(Color.rgb(112, 130, 153));
+        virtualId.setTextSize(16);
+        virtualId.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+        virtualId.setPadding(dp(context, 14), 0, dp(context, 14), 0);
+        virtualId.setBackground(shape(Color.rgb(12, 20, 33), 12, context));
         LinearLayout.LayoutParams idParams = new LinearLayout.LayoutParams(-1, dp(context, 54));
         idParams.topMargin = dp(context, 8);
         idParams.bottomMargin = dp(context, 18);
-        card.addView(virtualNumber, idParams);
+        card.addView(virtualId, idParams);
 
         card.addView(label(context, "ОДНОРАЗОВЫЙ КОД"));
         code = new EditText(context);
@@ -148,10 +148,10 @@ public class FreeGramAuthFragment extends BaseFragment {
     }
 
     private void verifyCode(Context context) {
-        String number = virtualNumber.getText().toString().replaceAll("[\\s()-]", "").trim();
+        String id = virtualId.getText().toString().trim().toUpperCase();
         String value = code.getText().toString().trim();
-        if (!number.matches("\\+1[0-9]{10}") || !value.matches("[0-9]{6}")) {
-            status.setText("Введи номер +1 и шестизначный код из бота.");
+        if (!id.matches("FG-[A-F0-9]{10}") || !value.matches("[0-9]{6}")) {
+            status.setText("Введи FreeGram ID и шестизначный код из бота.");
             return;
         }
 
@@ -160,7 +160,7 @@ public class FreeGramAuthFragment extends BaseFragment {
         executor.execute(() -> {
             try {
                 JSONObject body = new JSONObject();
-                body.put("virtual_number", number);
+                body.put("virtual_id", id);
                 body.put("code", value);
                 JSONObject result = FreeGramApi.request("POST", API_LOGIN, body, false);
                 String token = result.optString("access_token", "");

@@ -1,6 +1,8 @@
 package org.telegram.ui;
 
 import android.content.Context;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.graphics.Color;
 import android.view.Gravity;
 import android.view.View;
@@ -45,9 +47,13 @@ public class FreeGramChatFragment extends BaseFragment {
         title.setTextColor(Color.rgb(25, 35, 48));
         title.setTextSize(19);
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        Button invite = new Button(context);
+        invite.setText("Ссылка");
+        header.addView(invite);
         Button refresh = new Button(context);
         refresh.setText("Обновить");
         header.addView(refresh);
+        invite.setOnClickListener(v -> createInvite());
         root.addView(header);
 
         status = new TextView(context);
@@ -96,7 +102,7 @@ public class FreeGramChatFragment extends BaseFragment {
                         JSONObject item = rows.optJSONObject(i);
                         if (item == null) continue;
                         TextView bubble = new TextView(getParentActivity());
-                        bubble.setText(item.optString("username", "Пользователь") + "\\n" + item.optString("body", ""));
+                        bubble.setText(item.optString("username", "Пользователь") + "\n" + item.optString("body", ""));
                         bubble.setTextColor(Color.rgb(30, 38, 48));
                         bubble.setTextSize(15);
                         bubble.setPadding(14, 10, 14, 10);
@@ -109,6 +115,25 @@ public class FreeGramChatFragment extends BaseFragment {
             } catch (Exception e) {
                 android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
                 main.post(() -> { if (status != null) status.setText("Ошибка: " + e.getMessage()); });
+            }
+        });
+    }
+
+    private void createInvite() {
+        executor.execute(() -> {
+            try {
+                JSONObject result = FreeGramApi.request("POST", "/v1/chats/" + chatId + "/invite", new JSONObject(), true);
+                String link = result.optString("invite_link", "");
+                android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
+                main.post(() -> {
+                    if (getParentActivity() == null || link.isEmpty()) return;
+                    ClipboardManager clipboard = (ClipboardManager) getParentActivity().getSystemService(Context.CLIPBOARD_SERVICE);
+                    clipboard.setPrimaryClip(ClipData.newPlainText("FreeGram invite", link));
+                    status.setText("Ссылка-приглашение скопирована: " + link);
+                });
+            } catch (Exception e) {
+                android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
+                main.post(() -> { if (status != null) status.setText("Ссылка доступна только владельцу чата: " + e.getMessage()); });
             }
         });
     }

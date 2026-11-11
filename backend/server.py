@@ -362,11 +362,12 @@ def get_messages(chat_id: int, authorization: str = Header(default=""), after_id
         rows=c.execute("""SELECT m.id,m.body,m.created_at,m.edited_at,m.reply_to_id,
             reply.body AS reply_body,ru.username AS reply_username,
             u.username,u.virtual_id,
+            CASE WHEN m.user_id=%s THEN 1 ELSE 0 END AS is_mine,
             (SELECT COUNT(*) FROM message_reactions mr WHERE mr.message_id=m.id) AS reaction_count
             FROM messages m JOIN users u ON u.id=m.user_id
             LEFT JOIN messages reply ON reply.id=m.reply_to_id
             LEFT JOIN users ru ON ru.id=reply.user_id
-            WHERE m.chat_id=%s AND m.id>%s ORDER BY m.id ASC LIMIT 200""",(chat_id,after_id)).fetchall()
+            WHERE m.chat_id=%s AND m.id>%s ORDER BY m.id ASC LIMIT 200""",(user["id"],chat_id,after_id)).fetchall()
     return {"ok":True,"messages":rows}
 
 @app.post("/v1/chats/{chat_id}/messages")

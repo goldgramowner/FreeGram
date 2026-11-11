@@ -526,7 +526,7 @@ def owner_users(x_owner_secret: str = Header(default="")):
 def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
     require_owner(x_owner_secret)
     actions = {"ban", "unban", "verify", "unverify", "stars_add", "stars_remove", "stars_set",
-               "label", "nft_set", "nft_remove", "number_set", "number_remove"}
+               "label", "nft_set", "nft_remove", "number_set", "number_remove", "number_generate"}
     if data.action not in actions:
         raise HTTPException(400, "Unknown action")
     with connect() as c:
@@ -555,10 +555,15 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
             label = str(data.value or "").strip()[:32]
             c.execute("UPDATE users SET label=%s WHERE id=%s", (label, user["id"]))
         elif data.action == "nft_set":
-            name = str(data.value or "").strip().lstrip("@").lower()
+            raw = str(data.value or "").strip()
+            parts = raw.split("|", 1)
+            name = parts[0].strip().lstrip("@").lower()
+            rarity = parts[1].strip().lower() if len(parts) > 1 else "common"
             if not name or len(name) > 32 or not name.replace("_", "").isalnum():
                 raise HTTPException(400, "Invalid NFT username")
-            try: c.execute("UPDATE users SET nft_username=%s WHERE id=%s", (name, user["id"]))
+            if rarity not in ("common", "rare", "epic", "legendary"):
+                raise HTTPException(400, "Rarity must be common, rare, epic or legendary")
+            try: c.execute("UPDATE users SET nft_username=%s,nft_rarity=%s WHERE id=%s", (name, rarity, user["id"]))
             except psycopg.errors.UniqueViolation: raise HTTPException(409, "NFT username already assigned")
         elif data.action == "nft_remove":
             c.execute("UPDATE users SET nft_username=NULL WHERE id=%s", (user["id"],))
@@ -570,6 +575,16 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
             except psycopg.errors.UniqueViolation: raise HTTPException(409, "Number already assigned")
         elif data.action == "number_remove":
             c.execute("UPDATE users SET virtual_number=NULL WHERE id=%s", (user["id"],))
+        elif data.action == "number_generate":
+            number = None
+            for _ in range(30):
+                candidate = "+888" + "".join(str(secrets.randbelow(10)) for _ in range(8))
+                if not c.execute("SELECT 1 FROM users WHERE virtual_number=%s", (candidate,)).fetchone():
+                    number = candidate
+                    break
+            if not number:
+                raise HTTPException(503, "Could not allocate a virtual number")
+            c.execute("UPDATE users SET virtual_number=%s WHERE id=%s", (number, user["id"]))
         result = c.execute("""SELECT virtual_id, verified, banned, stars, label,
             nft_username, nft_rarity, virtual_number FROM users WHERE id=%s""", (user["id"],)).fetchone()
     return {"ok": True, "user": result}

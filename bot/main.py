@@ -146,7 +146,11 @@ async def owner_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(args) < 2:
             await update.message.reply_text(f"Формат: /{command} FG-XXXXXXXXXX значение")
             return
-        action, value = command, " ".join(args[1:])
+        if command == "nft_set" and len(args) >= 3:
+            value = args[1] + "|" + args[2]
+        else:
+            value = " ".join(args[1:])
+        action = command
     else:
         return
     try:
@@ -159,7 +163,7 @@ async def owner_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f'Проверен: {"да" if u["verified"] else "нет"}\\n'
             f'Stars: {u["stars"]}\\n'
             f'Метка: {u["label"] or "—"}\\n'
-            f'NFT: {u["nft_username"] or "—"}\\n'
+            f'NFT: {u["nft_username"] or "—"} ({u.get("nft_rarity", "common")})\\n'
             f'Номер: {u["virtual_number"] or "—"}'
         )
     except Exception as e:

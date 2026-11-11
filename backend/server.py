@@ -39,6 +39,7 @@ def init_db():
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS stars BIGINT NOT NULL DEFAULT 1000",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS label TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS nft_username TEXT",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS nft_rarity TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS virtual_number TEXT",
         ]:
             c.execute(sql)
@@ -472,7 +473,7 @@ def update_me(data: ProfileUpdate, authorization: str = Header(default="")):
         for key, value in fields.items():
             c.execute(f"UPDATE users SET {key}=%s WHERE id=%s", (value or "", user["id"]))
         row = c.execute("""SELECT virtual_id,username,display_name,bio,avatar_url,
-            verified,label,nft_username,virtual_number,stars FROM users WHERE id=%s""",
+            verified,label,nft_username,nft_rarity,virtual_number,stars FROM users WHERE id=%s""",
             (user["id"],)).fetchone()
     return {"ok": True, "profile": row}
 
@@ -485,7 +486,7 @@ def search_users(q: str, authorization: str = Header(default="")):
         raise HTTPException(400, "Search query must contain 2-40 characters")
     with connect() as c:
         rows = c.execute("""SELECT virtual_id,username,display_name,bio,avatar_url,
-            verified,label,nft_username,virtual_number
+            verified,label,nft_username,nft_rarity,virtual_number
             FROM users WHERE verified=1 AND banned=0
             AND (LOWER(username) LIKE %s OR LOWER(nft_username) LIKE %s
                  OR LOWER(display_name) LIKE %s)
@@ -500,7 +501,7 @@ def get_user_profile(username: str, authorization: str = Header(default="")):
     name = username.strip().lstrip("@").lower()
     with connect() as c:
         row = c.execute("""SELECT virtual_id,username,display_name,bio,avatar_url,
-            verified,label,nft_username,virtual_number
+            verified,label,nft_username,nft_rarity,virtual_number
             FROM users WHERE LOWER(username)=LOWER(%s) AND verified=1 AND banned=0""",
             (name,)).fetchone()
     if not row:

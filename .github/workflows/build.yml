@@ -3,16 +3,24 @@ name: FreeGram APK
 on:
   workflow_dispatch:
   push:
-    branches: [ master ]
+    branches:
+      - master
+      - freegram/full-messenger-development
+
+concurrency:
+  group: freegram-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 1
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -20,10 +28,26 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Cache Gradle and native build outputs
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+          gradle-home-cache-cleanup: true
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
+
+      - name: Cache Android SDK components
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_HOME }}/platforms/android-36
+            ${{ env.ANDROID_HOME }}/build-tools/36.0.0
+            ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
+            ${{ env.ANDROID_HOME }}/cmake/3.22.1
+          key: freegram-android-sdk-36-ndk27-cmake322
 
       - name: Install Android tools
         run: |
@@ -33,7 +57,7 @@ jobs:
       - name: Build FreeGram debug APK
         run: |
           chmod +x gradlew
-          ./gradlew :TMessagesProj_AppStandalone:assembleAfatStandalone --stacktrace
+          ./gradlew :TMessagesProj_AppStandalone:assembleAfatStandalone --stacktrace --build-cache --parallel
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -41,3 +65,4 @@ jobs:
           name: FreeGram-APK
           path: TMessagesProj_AppStandalone/build/outputs/apk/**/*.apk
           if-no-files-found: error
+          retention-days: 7

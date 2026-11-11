@@ -3,12 +3,15 @@ package org.telegram.ui;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Typeface;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ImageView;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -17,6 +20,8 @@ import org.json.JSONObject;
 import org.telegram.ui.ActionBar.BaseFragment;
 
 import java.net.URLEncoder;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -381,11 +386,96 @@ public class FreeGramHomeFragment extends BaseFragment {
     }
 
     private String giftIcon(String code) {
-        if ("rose".equals(code)) return "🌹";
-        if ("heart".equals(code)) return "❤️";
-        if ("crown".equals(code)) return "👑";
+        if ("rose".equals(code) || "red_rose_nft".equals(code)) return "🌹";
+        if ("heart".equals(code) || "crystal_heart".equals(code)) return "❤️";
+        if ("crown".equals(code) || "royal_ring".equals(code)) return "👑";
         if ("dragon".equals(code)) return "🐉";
-        return "🎁";
+        if (code.contains("pepe")) return "🐸";
+        if (code.contains("redo")) return "🪐";
+        return "✦";
+    }
+
+    private void loadGiftImage(ImageView target, String path) {
+        if (path == null || path.isEmpty()) return;
+        executor.execute(() -> {
+            HttpURLConnection connection = null;
+            try {
+                String url = path.startsWith("http") ? path : FreeGramApi.BASE + path;
+                connection = (HttpURLConnection) new URL(url).openConnection();
+                connection.setConnectTimeout(12000);
+                connection.setReadTimeout(15000);
+                Bitmap bitmap;
+                try (java.io.InputStream input = connection.getInputStream()) {
+                    bitmap = BitmapFactory.decodeStream(input);
+                }
+                if (bitmap != null) {
+                    android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                    main.post(() -> { if (target.getParent() != null) target.setImageBitmap(bitmap); });
+                }
+            } catch (Exception ignored) {
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        });
+    }
+
+    private LinearLayout giftCard(JSONObject gift, boolean owned) {
+        LinearLayout card = new LinearLayout(getParentActivity());
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(10, 9, 10, 9);
+        card.setBackgroundColor(Color.WHITE);
+        ImageView art = new ImageView(getParentActivity());
+        art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        art.setBackgroundColor(Color.rgb(224, 230, 245));
+        card.addView(art, new LinearLayout.LayoutParams(88, 88));
+        loadGiftImage(art, gift.optString("image_url", ""));
+        LinearLayout info = new LinearLayout(getParentActivity());
+        info.setOrientation(LinearLayout.VERTICAL);
+        info.setPadding(12, 0, 4, 0);
+        TextView name = new TextView(getParentActivity());
+        name.setText(giftIcon(gift.optString("code")) + "  " + gift.optString("title"));
+        name.setTextColor(Color.rgb(30, 40, 55));
+        name.setTextSize(16);
+        name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        info.addView(name);
+        TextView meta = new TextView(getParentActivity());
+        String line = gift.optString("rarity", "common").toUpperCase()
+            + " · " + gift.optString("collection", "FreeGram");
+        if (owned) line += " · уровень " + gift.optInt("upgrade_level", 0);
+        else line += " · " + gift.optLong("price") + " Stars";
+        meta.setText(line);
+        meta.setTextColor(Color.rgb(100, 110, 125));
+        meta.setTextSize(12);
+        info.addView(meta);
+        card.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
+        return card;
+    }
+
+    private void showGiftDetails(JSONObject gift) {
+        if (getParentActivity() == null) return;
+        LinearLayout content = new LinearLayout(getParentActivity());
+        content.setPadding(18, 8, 18, 8);
+        content.setOrientation(LinearLayout.VERTICAL);
+        ImageView art = new ImageView(getParentActivity());
+        art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        art.setBackgroundColor(Color.rgb(224, 230, 245));
+        content.addView(art, new LinearLayout.LayoutParams(-1, 250));
+        loadGiftImage(art, gift.optString("image_url", ""));
+        TextView details = new TextView(getParentActivity());
+        details.setPadding(0, 12, 0, 4);
+        details.setText(gift.optString("description", "")
+            + "\\nКоллекция: " + gift.optString("collection", "FreeGram")
+            + "\\nРедкость: " + gift.optString("rarity", "common")
+            + (gift.optBoolean("is_nft", false) ? "\\nКоллекционный предмет FreeGram" : "")
+            + "\\nЦена: " + gift.optLong("price") + " Stars");
+        details.setTextColor(Color.DKGRAY);
+        content.addView(details);
+        new AlertDialog.Builder(getParentActivity()).setTitle(gift.optString("title"))
+            .setView(content)
+            .setNegativeButton("Назад", null)
+            .setPositiveButton("Отправить", (d,w) -> sendGiftDialog(gift.optString("code"),gift.optString("title")))
+            .show();
     }
 
     private void showGiftShop() {
@@ -400,17 +490,22 @@ public class FreeGramHomeFragment extends BaseFragment {
                         status.setText("Магазин подарков пока пуст");
                         return;
                     }
-                    String[] labels = new String[gifts.length()];
+                    LinearLayout gallery = new LinearLayout(getParentActivity());
+                    gallery.setPadding(10, 8, 10, 8);
+                    gallery.setOrientation(LinearLayout.VERTICAL);
+                    ScrollView scroll = new ScrollView(getParentActivity());
+                    scroll.addView(gallery);
                     for (int i = 0; i < gifts.length(); i++) {
                         JSONObject gift = gifts.optJSONObject(i);
-                        labels[i] = giftIcon(gift.optString("code")) + "  " + gift.optString("title") + " · " + gift.optLong("price") + " Stars · " + gift.optString("rarity");
+                        if (gift == null) continue;
+                        LinearLayout card = giftCard(gift, false);
+                        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                        lp.bottomMargin = 7;
+                        gallery.addView(card, lp);
+                        card.setOnClickListener(v -> showGiftDetails(gift));
                     }
-                    new AlertDialog.Builder(getParentActivity())
-                        .setTitle("Подарки FreeGram")
-                        .setItems(labels, (d, which) -> {
-                            JSONObject gift = gifts.optJSONObject(which);
-                            if (gift != null) sendGiftDialog(gift.optString("code"), gift.optString("title"));
-                        }).setNegativeButton("Закрыть", null).show();
+                    new AlertDialog.Builder(getParentActivity()).setTitle("NFT и подарки · " + gifts.length())
+                        .setView(scroll).setNegativeButton("Закрыть", null).show();
                 });
             } catch (Exception e) { showError(e); }
         });
@@ -449,14 +544,49 @@ public class FreeGramHomeFragment extends BaseFragment {
                             .setPositiveButton("ОК", null).show();
                         return;
                     }
-                    String[] labels = new String[gifts.length()];
+                    LinearLayout gallery = new LinearLayout(getParentActivity());
+                    gallery.setPadding(10, 8, 10, 8);
+                    gallery.setOrientation(LinearLayout.VERTICAL);
+                    ScrollView scroll = new ScrollView(getParentActivity());
+                    scroll.addView(gallery);
                     for (int i = 0; i < gifts.length(); i++) {
                         JSONObject gift = gifts.optJSONObject(i);
-                        labels[i] = giftIcon(gift.optString("code")) + "  " + gift.optString("title") + " · " + gift.optString("rarity")
-                            + " · от @" + gift.optString("sender_username", "FreeGram");
+                        if (gift == null) continue;
+                        LinearLayout card = giftCard(gift, true);
+                        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                        lp.bottomMargin = 7;
+                        gallery.addView(card, lp);
+                        card.setOnClickListener(v -> {
+                            int level = gift.optInt("upgrade_level", 0);
+                            String message = gift.optString("description", "")
+                                + "\\nКоллекция: " + gift.optString("collection", "FreeGram")
+                                + "\\nУровень улучшения: " + level + "/3"
+                                + "\\nСерийный номер: " + gift.optLong("serial_no", gift.optLong("id"));
+                            new AlertDialog.Builder(getParentActivity()).setTitle(gift.optString("title"))
+                                .setMessage(message)
+                                .setNegativeButton("Закрыть", null)
+                                .setPositiveButton(level >= 3 ? "Максимум" : "Улучшить", (d,w) -> {
+                                    if (level < 3) upgradeMyGift(gift.optLong("id"));
+                                }).show();
+                        });
                     }
-                    new AlertDialog.Builder(getParentActivity()).setTitle("Мои подарки")
-                        .setItems(labels, (d, which) -> {}).setPositiveButton("Закрыть", null).show();
+                    new AlertDialog.Builder(getParentActivity()).setTitle("Моя коллекция · " + gifts.length())
+                        .setView(scroll).setNegativeButton("Закрыть", null).show();
+                });
+            } catch (Exception e) { showError(e); }
+        });
+    }
+
+    private void upgradeMyGift(long id) {
+        executor.execute(() -> {
+            try {
+                JSONObject result = FreeGramApi.request("POST", "/v1/shop/my-gifts/" + id + "/upgrade",
+                    new JSONObject(), true);
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> {
+                    if (status != null) status.setText("Подарок улучшен · уровень "
+                        + result.optInt("upgrade_level") + " · осталось Stars: " + result.optLong("remaining_stars"));
+                    showMyGifts();
                 });
             } catch (Exception e) { showError(e); }
         });

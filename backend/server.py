@@ -3,6 +3,7 @@ import secrets
 import hashlib
 import re
 from datetime import datetime, timezone, timedelta
+from html import escape as html_escape
 
 import psycopg
 from psycopg.rows import dict_row
@@ -71,10 +72,22 @@ def init_db():
             description TEXT NOT NULL DEFAULT '', price BIGINT NOT NULL CHECK(price >= 0),
             image_url TEXT NOT NULL DEFAULT '', rarity TEXT NOT NULL DEFAULT 'common',
             active INTEGER NOT NULL DEFAULT 1)""")
+        for sql in [
+            "ALTER TABLE gift_types ADD COLUMN IF NOT EXISTS collection TEXT NOT NULL DEFAULT 'FreeGram Originals'",
+            "ALTER TABLE gift_types ADD COLUMN IF NOT EXISTS is_nft INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE gift_types ADD COLUMN IF NOT EXISTS background TEXT NOT NULL DEFAULT 'aurora'",
+            "ALTER TABLE gift_types ADD COLUMN IF NOT EXISTS upgrade_cost BIGINT NOT NULL DEFAULT 0",
+        ]:
+            c.execute(sql)
         c.execute("""CREATE TABLE IF NOT EXISTS user_gifts (
             id BIGSERIAL PRIMARY KEY, gift_type_id BIGINT NOT NULL REFERENCES gift_types(id),
             owner_user_id BIGINT NOT NULL REFERENCES users(id), sender_user_id BIGINT REFERENCES users(id),
             chat_id BIGINT REFERENCES chats(id), created_at TEXT NOT NULL)""")
+        for sql in [
+            "ALTER TABLE user_gifts ADD COLUMN IF NOT EXISTS upgrade_level INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE user_gifts ADD COLUMN IF NOT EXISTS serial_no BIGINT",
+        ]:
+            c.execute(sql)
         c.execute("CREATE INDEX IF NOT EXISTS user_gifts_owner_idx ON user_gifts(owner_user_id,id DESC)")
         c.execute("""CREATE TABLE IF NOT EXISTS bot_outbox (
             id BIGSERIAL PRIMARY KEY, telegram_id BIGINT NOT NULL,
@@ -85,14 +98,35 @@ def init_db():
             id BIGSERIAL PRIMARY KEY, telegram_id BIGINT NOT NULL,
             message TEXT NOT NULL, created_at TEXT NOT NULL, sent_at TEXT)""")
         c.execute("CREATE INDEX IF NOT EXISTS bot_notifications_pending_idx ON bot_notifications(sent_at,id)")
-        for gift in [
-            ("rose", "Роза", "Небольшой знак внимания", 15, "common"),
-            ("heart", "Сердце", "Подарок с теплом", 35, "common"),
-            ("crown", "Корона", "Особый подарок", 250, "rare"),
-            ("dragon", "Дракон", "Коллекционный подарок", 900, "epic"),
-        ]:
-            c.execute("""INSERT INTO gift_types(code,title,description,price,rarity)
-                VALUES(%s,%s,%s,%s,%s) ON CONFLICT(code) DO NOTHING""", gift)
+        gifts = [
+            ("rose","Роза","Классический цветочный подарок",15,"common","Everyday",0,"petal",5),
+            ("heart","Сердце","Тёплый знак внимания",35,"common","Everyday",0,"ruby",10),
+            ("crown","Корона","Золотой символ статуса",250,"rare","Royal",1,"gold",80),
+            ("dragon","Дракон","Коллекционный хранитель",900,"epic","Mythic Beasts",1,"ember",180),
+            ("pepe_frog","Pepe — Frog Mood","Лягушачий мем-персонаж в оригинальном стиле; не официальный Telegram collectible",1200,"epic","Pepe-inspired • FreeGram Originals",1,"swamp",240),
+            ("redo_orbit","Redo — Orbit","Космический collectible из серии Redo",950,"epic","Redo • FreeGram Originals",1,"nebula",190),
+            ("starfall","Звездопад","Созвездие в стеклянной сфере",420,"rare","Celestial",1,"night",100),
+            ("moon_cat","Лунный кот","Котёнок на полумесяце",180,"rare","Dream Pets",1,"moon",60),
+            ("pixel_fox","Пиксельная лиса","Ретро-питомец с сияющим хвостом",90,"common","Pixel World",1,"pixel",35),
+            ("crystal_heart","Кристальное сердце","Гранёный рубиновый кристалл",650,"epic","Gems",1,"crystal",130),
+            ("golden_duck","Золотая уточка","Коллекционная золотая фигурка",300,"rare","Toy Box",1,"sun",75),
+            ("cloud_puppy","Облачный щенок","Мягкий небесный питомец",75,"common","Dream Pets",1,"sky",25),
+            ("neon_skull","Неоновая маска","Светящаяся фантазийная маска",520,"epic","Neon Nights",1,"neon",110),
+            ("sakura_box","Сакура","Цветущая сакура в подарочной коробке",110,"common","Botanical",1,"sakura",30),
+            ("comet","Комета","Ледяной след кометы",800,"epic","Celestial",1,"comet",160),
+            ("royal_ring","Королевское кольцо","Кольцо с сияющим камнем",1500,"legendary","Royal",1,"royal",300),
+            ("jellyfish","Медуза","Светящаяся глубоководная медуза",240,"rare","Ocean",1,"ocean",65),
+            ("volcano","Мини-вулкан","Сувенир с огненной лавой",360,"rare","Elements",1,"lava",90),
+            ("paper_crane","Бумажный журавль","Оригами с золотой каймой",45,"common","Crafted",1,"paper",15),
+            ("aurora_lamp","Северное сияние","Миниатюрная лампа с переливами",700,"epic","Celestial",1,"aurora",140),
+            ("mystic_key","Мистический ключ","Ключ от неизвестной коллекции",1000,"legendary","Arcana",1,"mystic",250),
+            ("red_rose_nft","Алая роза","Редкая роза в хрустальном куполе",560,"epic","Botanical",1,"ruby",120),
+            ("robot_buddy","Робо-друг","Маленький дружелюбный робот",130,"rare","Pixel World",1,"steel",45),
+            ("treasure_chest","Сундук сокровищ","Сундук с мерцающими монетами",1900,"legendary","Treasures",1,"treasure",380),
+        ]
+        for gift in gifts:
+            c.execute("""INSERT INTO gift_types(code,title,description,price,rarity,collection,is_nft,background,upgrade_cost)
+                VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(code) DO NOTHING""", gift)
 
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
@@ -613,22 +647,87 @@ def join_by_invite(code: str, authorization: str = Header(default="")):
 def gift_catalog(authorization: str = Header(default="")):
     authenticated_user(authorization)
     with connect() as c:
-        rows = c.execute("""SELECT code,title,description,price,image_url,rarity
-            FROM gift_types WHERE active=1 ORDER BY price,id""").fetchall()
-    return {"ok": True, "gifts": rows}
+        rows = c.execute("""SELECT code,title,description,price,rarity,collection,is_nft,
+            background,upgrade_cost,
+            '/v1/shop/gifts/' || code || '/art.svg' AS image_url
+            FROM gift_types WHERE active=1 ORDER BY collection,price,id""").fetchall()
+    return {"ok": True, "gifts": rows, "count": len(rows)}
+
+
+@app.get("/v1/shop/gifts/{code}/art.svg")
+def gift_art(code: str):
+    with connect() as c:
+        gift = c.execute("SELECT title,rarity,background FROM gift_types WHERE code=%s AND active=1",
+                         (code.lower(),)).fetchone()
+    if not gift:
+        raise HTTPException(404, "Gift not found")
+    palettes = {
+        "petal":("#f8b4c8","#8f315e"),"ruby":("#ff5b76","#5d1539"),
+        "gold":("#ffe08a","#9a5c0b"),"ember":("#ff9b54","#6f183d"),
+        "swamp":("#b5d77a","#245b47"),"nebula":("#b6a4ff","#38276f"),
+        "night":("#9ab9ff","#182c68"),"moon":("#c8c5ff","#45418a"),
+        "pixel":("#8ff0bd","#246c66"),"crystal":("#ff9ed6","#663b9b"),
+        "sun":("#ffe28b","#a75b19"),"sky":("#b6e9ff","#3577ad"),
+        "neon":("#ff8cdb","#38206f"),"sakura":("#ffc3d7","#9b476e"),
+        "comet":("#b8f4ff","#31548d"),"royal":("#ffe8a5","#60418d"),
+        "ocean":("#8ef0e6","#155a83"),"lava":("#ffc16c","#8b2929"),
+        "paper":("#fff0c4","#8b6b45"),"aurora":("#a8f0d0","#3654a0"),
+        "mystic":("#d4b7ff","#34265e"),"steel":("#b8d5e8","#3c536c"),
+        "treasure":("#ffdc7a","#75421a")
+    }
+    a,b=palettes.get(gift["background"],("#b8c7ff","#35456f"))
+    title=html_escape(gift["title"])
+    rarity=html_escape(gift["rarity"].upper())
+    svg=f'''<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="{a}"/><stop offset="1" stop-color="{b}"/></linearGradient>
+    <radialGradient id="r"><stop stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
+    <rect width="640" height="640" rx="72" fill="url(#g)"/><circle cx="320" cy="270" r="210" fill="url(#r)"/>
+    <circle cx="320" cy="270" r="142" fill="#ffffff" fill-opacity=".16" stroke="#fff" stroke-opacity=".65" stroke-width="5"/>
+    <path d="M320 145 L355 238 L455 245 L378 310 L402 410 L320 355 L238 410 L262 310 L185 245 L285 238 Z" fill="#fff" fill-opacity=".88"/>
+    <text x="320" y="510" text-anchor="middle" font-family="sans-serif" font-size="34" font-weight="700" fill="#fff">{title}</text>
+    <text x="320" y="560" text-anchor="middle" font-family="sans-serif" font-size="22" letter-spacing="5" fill="#fff" fill-opacity=".85">{rarity}</text></svg>'''
+    from fastapi.responses import Response
+    return Response(content=svg, media_type="image/svg+xml", headers={"Cache-Control":"public, max-age=86400"})
 
 
 @app.get("/v1/shop/my-gifts")
 def my_gifts(authorization: str = Header(default="")):
     user = authenticated_user(authorization)
     with connect() as c:
-        rows = c.execute("""SELECT ug.id,gt.code,gt.title,gt.description,gt.image_url,gt.rarity,
-            sender.username AS sender_username,ug.created_at
+        rows = c.execute("""SELECT ug.id,gt.code,gt.title,gt.description,gt.rarity,
+            gt.collection,gt.is_nft,gt.background,ug.upgrade_level,ug.serial_no,
+            sender.username AS sender_username,ug.created_at,
+            '/v1/shop/gifts/' || gt.code || '/art.svg' AS image_url
             FROM user_gifts ug JOIN gift_types gt ON gt.id=ug.gift_type_id
             LEFT JOIN users sender ON sender.id=ug.sender_user_id
             WHERE ug.owner_user_id=%s ORDER BY ug.id DESC LIMIT 200""",
             (user["id"],)).fetchall()
     return {"ok": True, "gifts": rows}
+
+
+@app.post("/v1/shop/my-gifts/{gift_id}/upgrade")
+def upgrade_gift(gift_id: int, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    with connect() as c:
+        gift = c.execute("""SELECT ug.id,ug.upgrade_level,gt.upgrade_cost,gt.rarity,gt.title
+            FROM user_gifts ug JOIN gift_types gt ON gt.id=ug.gift_type_id
+            WHERE ug.id=%s AND ug.owner_user_id=%s FOR UPDATE OF ug""",
+            (gift_id,user["id"])).fetchone()
+        if not gift:
+            raise HTTPException(404,"Gift not found in your collection")
+        levels=["common","rare","epic","legendary"]
+        current=min(int(gift["upgrade_level"]),3)
+        if current>=3:
+            raise HTTPException(400,"Gift is already at maximum level")
+        cost=int(gift["upgrade_cost"] or 0) * (current+1)
+        balance=c.execute("SELECT stars FROM users WHERE id=%s FOR UPDATE",(user["id"],)).fetchone()["stars"]
+        if balance<cost:
+            raise HTTPException(400,"Not enough Stars")
+        c.execute("UPDATE users SET stars=stars-%s WHERE id=%s",(cost,user["id"]))
+        level=current+1
+        c.execute("UPDATE user_gifts SET upgrade_level=%s WHERE id=%s",(level,gift_id))
+    return {"ok":True,"gift_id":gift_id,"upgrade_level":level,
+            "rarity":levels[level],"spent_stars":cost,"remaining_stars":balance-cost}
 
 
 @app.post("/v1/shop/gifts/send")

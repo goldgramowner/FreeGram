@@ -130,13 +130,16 @@ public class FreeGramProfileFragment extends BaseFragment {
     }
 
     private void saveProfile() {
+        final String name = username.getText().toString().trim();
+        final String display = displayName.getText().toString().trim();
+        final String about = bio.getText().toString().trim();
         if (save != null) save.setEnabled(false);
         executor.execute(() -> {
             try {
                 JSONObject body = new JSONObject();
-                body.put("username", username.getText().toString().trim());
-                body.put("display_name", displayName.getText().toString().trim());
-                body.put("bio", bio.getText().toString().trim());
+                body.put("username", name);
+                body.put("display_name", display);
+                body.put("bio", about);
                 FreeGramApi.request("PUT", "/v1/me/profile", body, true);
                 main.post(() -> {
                     if (status != null) status.setText("Профиль сохранён.");

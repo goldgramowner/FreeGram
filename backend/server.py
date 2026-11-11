@@ -200,6 +200,9 @@ class GiftMarketList(BaseModel):
     gift_id: int
     price_stars: int = Field(ge=1, le=100000000)
 
+class GiftBuy(BaseModel):
+    gift_code: str = Field(min_length=2, max_length=32)
+
 class SearchQuery(BaseModel):
     query: str = Field(min_length=2, max_length=40)
 
@@ -617,6 +620,26 @@ def gift_catalog(authorization: str = Header(default="")):
             is_collectible,collection_name,model_url,animation_url
             FROM gift_types WHERE active=1 ORDER BY price,id""").fetchall()
     return {"ok": True, "gifts": rows}
+
+
+@app.post("/v1/shop/gifts/buy")
+def buy_catalog_gift(data: GiftBuy, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    now = datetime.now(timezone.utc).isoformat()
+    with connect() as c:
+        gift = c.execute("""SELECT id,price,is_collectible FROM gift_types
+            WHERE code=%s AND active=1 FOR UPDATE""", (data.gift_code.lower(),)).fetchone()
+        if not gift: raise HTTPException(404, "Gift not found")
+        wallet = c.execute("SELECT stars FROM users WHERE id=%s FOR UPDATE", (user["id"],)).fetchone()
+        if wallet["stars"] < gift["price"]: raise HTTPException(400, "Not enough Stars")
+        c.execute("UPDATE users SET stars=stars-%s WHERE id=%s", (gift["price"],user["id"]))
+        serial = ("FG-NFT-" + secrets.token_hex(5).upper()) if gift["is_collectible"] else None
+        row = c.execute("""INSERT INTO user_gifts
+            (gift_type_id,owner_user_id,sender_user_id,created_at,serial_number)
+            VALUES(%s,%s,%s,%s,%s) RETURNING id""",
+            (gift["id"],user["id"],user["id"],now,serial)).fetchone()
+    return {"ok":True,"gift_id":row["id"],"spent_stars":gift["price"],
+            "remaining_stars":wallet["stars"]-gift["price"],"serial_number":serial}
 
 
 @app.get("/v1/shop/my-gifts")

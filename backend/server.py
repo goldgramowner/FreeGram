@@ -743,7 +743,7 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
             except psycopg.errors.UniqueViolation: raise HTTPException(409, "Number already assigned")
             c.execute("INSERT INTO bot_notifications(telegram_id,message,created_at) VALUES(%s,%s,%s)",
                 (user["telegram_id"], "Тебе выдан виртуальный номер FreeGram: " + number +
-                 "\\nОткрой приложение FreeGram и войди по этому номеру. Код подтверждения придёт сюда.",
+                 "\nОткрой приложение FreeGram и войди по этому номеру. Код подтверждения придёт сюда.",
                  datetime.now(timezone.utc).isoformat()))
         elif data.action == "number_remove":
             c.execute("UPDATE users SET virtual_number=NULL WHERE id=%s", (user["id"],))
@@ -761,7 +761,7 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
             c.execute("UPDATE users SET virtual_number=%s WHERE id=%s", (number, user["id"]))
             c.execute("INSERT INTO bot_notifications(telegram_id,message,created_at) VALUES(%s,%s,%s)",
                 (user["telegram_id"], "Тебе выдан виртуальный номер FreeGram: " + number +
-                 "\\nОткрой приложение FreeGram и войди по этому номеру. Код подтверждения придёт сюда.",
+                 "\nОткрой приложение FreeGram и войди по этому номеру. Код подтверждения придёт сюда.",
                  datetime.now(timezone.utc).isoformat()))
         result = c.execute("""SELECT virtual_id, verified, banned, stars, label,
             nft_username, nft_rarity, virtual_number FROM users WHERE id=%s""", (user["id"],)).fetchone()

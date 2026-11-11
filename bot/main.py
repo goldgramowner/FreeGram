@@ -136,8 +136,30 @@ async def deliver_pending_codes(application):
         await asyncio.sleep(4)
 
 
+async def deliver_notifications(application):
+    while True:
+        try:
+            result = await asyncio.to_thread(
+                api_request, "/v1/bot/notifications", "GET", None, "bot")
+            for item in result.get("items", []):
+                try:
+                    await application.bot.send_message(
+                        chat_id=int(item["telegram_id"]),
+                        text=item["message"])
+                    await asyncio.to_thread(
+                        api_request,
+                        f'/v1/bot/notifications/{int(item["id"])}/sent',
+                        "POST", {}, "bot")
+                except Exception:
+                    log.exception("Could not deliver FreeGram notification")
+        except Exception:
+            log.exception("FreeGram notification polling failed")
+        await asyncio.sleep(5)
+
+
 async def post_init(application):
     application.create_task(deliver_pending_codes(application))
+    application.create_task(deliver_notifications(application))
 
 
 async def owner(update: Update, context: ContextTypes.DEFAULT_TYPE):

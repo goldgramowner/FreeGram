@@ -6,6 +6,7 @@ on:
     branches:
       - master
       - freegram/full-messenger-development
+      - freegram/original-client-integration
 
 concurrency:
   group: freegram-apk-${{ github.ref }}

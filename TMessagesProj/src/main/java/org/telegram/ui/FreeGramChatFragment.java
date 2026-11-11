@@ -144,11 +144,14 @@ public class FreeGramChatFragment extends BaseFragment {
                 JSONObject result = FreeGramApi.request("GET", "/v1/chats/" + chatId, null, true);
                 JSONObject chat = result.optJSONObject("chat");
                 JSONArray members = result.optJSONArray("members");
+                boolean isOwner = result.optBoolean("is_owner", false);
                 StringBuilder info = new StringBuilder(chatTitle);
                 if (chat != null) {
                     String description = chat.optString("description", "");
                     if (!description.isEmpty()) info.append("\\n\\n").append(description);
                     info.append("\\n\\nТип: ").append(chat.optString("kind", "group"));
+                    String cover = chat.optString("cover_url", "");
+                    if (!cover.isEmpty()) info.append("\\nОбложка: задана");
                 }
                 info.append("\\nУчастников: ").append(members == null ? 0 : members.length());
                 if (members != null) {
@@ -161,14 +164,81 @@ public class FreeGramChatFragment extends BaseFragment {
                 android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
                     if (getParentActivity() == null) return;
+                    if (!isOwner) {
+                        new AlertDialog.Builder(getParentActivity()).setTitle("Профиль чата")
+                            .setMessage(text).setPositiveButton("Закрыть", null).show();
+                        return;
+                    }
                     new AlertDialog.Builder(getParentActivity()).setTitle("Профиль чата")
-                        .setMessage(text).setPositiveButton("Закрыть", null).show();
+                        .setMessage(text)
+                        .setItems(new String[]{"Изменить название и обложку", "Добавить участника", "Закрыть"},
+                            (dialog, which) -> {
+                                if (which == 0) editChatProfile(chat);
+                                else if (which == 1) addChatMember();
+                            }).show();
                 });
             } catch (Exception e) {
                 android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> { if (status != null) status.setText("Не удалось открыть профиль: " + e.getMessage()); });
             }
         });
+    }
+
+    private void editChatProfile(JSONObject chat) {
+        if (getParentActivity() == null || chat == null) return;
+        LinearLayout form = new LinearLayout(getParentActivity());
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(20, 8, 20, 4);
+        EditText title = new EditText(getParentActivity());
+        title.setSingleLine(true);
+        title.setHint("Название");
+        title.setText(chat.optString("title", chatTitle));
+        EditText description = new EditText(getParentActivity());
+        description.setHint("Описание");
+        description.setText(chat.optString("description", ""));
+        EditText cover = new EditText(getParentActivity());
+        cover.setSingleLine(true);
+        cover.setHint("URL обложки");
+        cover.setText(chat.optString("cover_url", ""));
+        form.addView(title);
+        form.addView(description);
+        form.addView(cover);
+        new AlertDialog.Builder(getParentActivity()).setTitle("Редактировать чат")
+            .setView(form).setNegativeButton("Отмена", null)
+            .setPositiveButton("Сохранить", (d, w) -> executor.execute(() -> {
+                try {
+                    JSONObject body = new JSONObject();
+                    body.put("title", title.getText().toString().trim());
+                    body.put("description", description.getText().toString().trim());
+                    body.put("cover_url", cover.getText().toString().trim());
+                    FreeGramApi.request("PATCH", "/v1/chats/" + chatId, body, true);
+                    android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                    main.post(() -> status.setText("Профиль чата обновлён"));
+                } catch (Exception e) {
+                    android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                    main.post(() -> { if (status != null) status.setText("Не удалось сохранить: " + e.getMessage()); });
+                }
+            })).show();
+    }
+
+    private void addChatMember() {
+        EditText username = new EditText(getParentActivity());
+        username.setSingleLine(true);
+        username.setHint("@username");
+        new AlertDialog.Builder(getParentActivity()).setTitle("Добавить участника")
+            .setView(username).setNegativeButton("Отмена", null)
+            .setPositiveButton("Добавить", (d, w) -> executor.execute(() -> {
+                try {
+                    JSONObject body = new JSONObject();
+                    body.put("username", username.getText().toString().trim().replace("@", ""));
+                    FreeGramApi.request("POST", "/v1/chats/" + chatId + "/members", body, true);
+                    android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                    main.post(() -> status.setText("Участник добавлен"));
+                } catch (Exception e) {
+                    android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                    main.post(() -> { if (status != null) status.setText("Не удалось добавить участника: " + e.getMessage()); });
+                }
+            })).show();
     }
 
     private void showChatGifts() {

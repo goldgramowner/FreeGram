@@ -192,16 +192,23 @@ public class FreeGramHomeFragment extends BaseFragment {
         title.setHint("Название");
         EditText username = new EditText(getParentActivity());
         username.setHint("Username (необязательно)");
+        EditText cover = new EditText(getParentActivity());
+        cover.setHint("URL обложки (необязательно)");
         LinearLayout box = new LinearLayout(getParentActivity());
         box.setPadding(dp(20), dp(8), dp(20), dp(8));
         box.setOrientation(LinearLayout.VERTICAL);
-        if ("group".equals(kind) || "channel".equals(kind)) box.addView(title);
+        if ("group".equals(kind) || "channel".equals(kind)) {
+            box.addView(title);
+            box.addView(cover);
+        }
         box.addView(username);
         new AlertDialog.Builder(getParentActivity()).setTitle("Создать " + ("group".equals(kind) ? "группу" : "канал"))
             .setView(box).setNegativeButton("Отмена", null).setPositiveButton("Создать", (d, w) -> {
                 JSONObject body = obj("kind", kind, "title", title.getText().toString());
-                try { if (!username.getText().toString().trim().isEmpty()) body.put("username", username.getText().toString().trim()); }
-                catch (Exception ignored) {}
+                try {
+                    if (!username.getText().toString().trim().isEmpty()) body.put("username", username.getText().toString().trim());
+                    if (!cover.getText().toString().trim().isEmpty()) body.put("cover_url", cover.getText().toString().trim());
+                } catch (Exception ignored) {}
                 api("POST", "/v1/chats", body, (data, error) -> {
                     if (error != null) message(error.getMessage());
                     else {

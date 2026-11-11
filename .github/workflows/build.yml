@@ -10,7 +10,7 @@ on:
 
 concurrency:
   group: freegram-apk-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -26,7 +26,6 @@ jobs:
       - name: Validate FreeGram backend and bot Python syntax
         run: |
           python -m py_compile backend/server.py bot/main.py
-
 
       - name: Set up JDK
         uses: actions/setup-java@v4

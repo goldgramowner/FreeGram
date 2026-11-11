@@ -186,8 +186,9 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 "✅ Регистрация FreeGram создана!\\n\\n"
                 f'🆔 FreeGram ID: {result["virtual_id"]}\\n'
+                f'🇺🇸 Виртуальный номер: {result.get("virtual_number", "не выдан")}\\n'
                 f'🔐 Одноразовый код: {result["code"]}\\n\\n'
-                "Код действует 10 минут. Введи эти данные в приложении FreeGram.")
+                "Код действует 10 минут. Введи номер +1 и код в приложении FreeGram.")
         except Exception:
             log.exception("Registration API error")
             await query.edit_message_text(

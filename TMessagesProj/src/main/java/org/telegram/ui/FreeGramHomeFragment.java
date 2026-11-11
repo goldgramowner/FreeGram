@@ -101,7 +101,7 @@ public class FreeGramHomeFragment extends BaseFragment {
             try {
                 JSONObject result = FreeGramApi.request("GET", "/v1/chats", null, true);
                 JSONArray chats = result.optJSONArray("chats");
-                android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
                     if (list == null) return;
                     list.removeAllViews();
@@ -145,7 +145,7 @@ public class FreeGramHomeFragment extends BaseFragment {
             try {
                 JSONObject result = FreeGramApi.request("GET", "/v1/users/search?q=" + URLEncoder.encode(q, "UTF-8"), null, true);
                 JSONArray users = result.optJSONArray("users");
-                android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
                     if (list == null) return;
                     list.removeAllViews();
@@ -178,7 +178,7 @@ public class FreeGramHomeFragment extends BaseFragment {
                 body.put("username", username);
                 JSONObject result = FreeGramApi.request("POST", "/v1/chats", body, true);
                 long id = result.optLong("chat_id", -1);
-                android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> { if (id > 0) presentFragment(new FreeGramChatFragment(id, username), true); });
             } catch (Exception e) { showError(e); }
         });
@@ -201,7 +201,7 @@ public class FreeGramHomeFragment extends BaseFragment {
                         body.put("title", name);
                         JSONObject result = FreeGramApi.request("POST", "/v1/chats", body, true);
                         long id = result.optLong("chat_id", -1);
-                        android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
+                        android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                         main.post(() -> { if (id > 0) presentFragment(new FreeGramChatFragment(id, name), true); loadChats(); });
                     } catch (Exception e) { showError(e); }
                 });
@@ -212,7 +212,7 @@ public class FreeGramHomeFragment extends BaseFragment {
         executor.execute(() -> {
             try {
                 JSONObject me = FreeGramApi.request("GET", "/v1/me", null, true);
-                android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
                     if (getParentActivity() == null) return;
                     LinearLayout form = new LinearLayout(getParentActivity());
@@ -243,7 +243,7 @@ public class FreeGramHomeFragment extends BaseFragment {
                                 update.put("display_name", display.getText().toString().trim());
                                 update.put("bio", bio.getText().toString().trim());
                                 FreeGramApi.request("PATCH", "/v1/me", update, true);
-                                android.os.Handler h = new android.os.Handler(getParentActivity().getMainLooper());
+                                android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
                                 h.post(() -> status.setText("Профиль сохранён"));
                             } catch (Exception e) { showError(e); }
                         })).show();
@@ -253,7 +253,7 @@ public class FreeGramHomeFragment extends BaseFragment {
     }
 
     private void showError(Exception e) {
-        android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
+        android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
         main.post(() -> { if (status != null) status.setText(e.getMessage() == null ? "Ошибка FreeGram API" : e.getMessage()); });
     }
 

@@ -40,6 +40,7 @@ def init_db():
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS label TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS nft_username TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS virtual_number TEXT",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_attempts INTEGER NOT NULL DEFAULT 0",
         ]:
             c.execute(sql)
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_nft_username_uq ON users (LOWER(nft_username)) WHERE nft_username IS NOT NULL")
@@ -235,15 +236,13 @@ def request_virtual_number_code(data: VirtualNumberRequest):
         # Keep responses identical for unknown, unlinked and blocked numbers.
         if not user or user["telegram_id"] is None or user["banned"]:
             return {"ok": True, "message": "Если номер активен, код придёт в FreeGram Bot."}
-        if user["otp_expires"]:
-            try:
-                previous_expiry = datetime.fromisoformat(user["otp_expires"])
-                if previous_expiry > now + timedelta(minutes=9):
-                    return {"ok": True, "message": "Если номер активен, код придёт в FreeGram Bot."}
-            except (TypeError, ValueError):
-                pass
+        recent_request = c.execute("""SELECT 1 FROM bot_outbox
+            WHERE virtual_number=%s AND created_at>%s LIMIT 1""",
+            (number, (now - timedelta(seconds=60)).isoformat())).fetchone()
+        if recent_request:
+            return {"ok": True, "message": "Если номер активен, код придёт в FreeGram Bot."}
         c.execute("""UPDATE users SET otp_salt=%s, otp_hash=%s, otp_expires=%s,
-            verified=0, token_hash=NULL WHERE id=%s""",
+            otp_attempts=0, verified=0, token_hash=NULL WHERE id=%s""",
             (salt, digest(salt + code), (now + timedelta(minutes=10)).isoformat(), user["id"]))
         c.execute("""INSERT INTO bot_outbox(telegram_id,virtual_number,code,created_at)
             VALUES(%s,%s,%s,%s)""",
@@ -283,15 +282,18 @@ def verify(data: Verification):
                              (data.virtual_id.upper(),)).fetchone()
         else:
             raise HTTPException(400, "Virtual number or ID required")
-        if not user or not user["otp_hash"] or datetime.fromisoformat(user["otp_expires"]) < now:
+        if not user or not user["otp_hash"] or not user["otp_expires"] or datetime.fromisoformat(user["otp_expires"]) < now:
             raise HTTPException(400, "Invalid ID or expired code")
+        if int(user.get("otp_attempts") or 0) >= 5:
+            raise HTTPException(429, "Too many code attempts. Request a new code.")
         if not secrets.compare_digest(digest(user["otp_salt"] + data.code), user["otp_hash"]):
+            c.execute("UPDATE users SET otp_attempts=otp_attempts+1 WHERE id=%s", (user["id"],))
             raise HTTPException(400, "Invalid ID or code")
         if user["banned"]:
             raise HTTPException(403, "Account banned")
         token = secrets.token_urlsafe(32)
         c.execute("""UPDATE users SET verified=1, otp_hash=NULL, otp_salt=NULL,
-            otp_expires=NULL, token_hash=%s WHERE id=%s""", (digest(token), user["id"]))
+            otp_expires=NULL, otp_attempts=0, token_hash=%s WHERE id=%s""", (digest(token), user["id"]))
     return {"ok": True, "access_token": token, "token_type": "Bearer",
             "virtual_id": user["virtual_id"], "virtual_number": user["virtual_number"]}
 

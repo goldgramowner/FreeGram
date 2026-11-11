@@ -647,7 +647,7 @@ def send_gift(data: GiftSend, authorization: str = Header(default="")):
             raise HTTPException(404, "Recipient not found")
         if recipient["id"] == user["id"]:
             raise HTTPException(400, "You cannot send a gift to yourself")
-        gift = c.execute("SELECT id,price FROM gift_types WHERE code=%s AND active=1",
+        gift = c.execute("SELECT id,price,is_collectible FROM gift_types WHERE code=%s AND active=1",
                          (data.gift_code.lower(),)).fetchone()
         if not gift:
             raise HTTPException(404, "Gift not found")
@@ -663,9 +663,10 @@ def send_gift(data: GiftSend, authorization: str = Header(default="")):
         if balance < gift["price"]:
             raise HTTPException(400, "Not enough Stars")
         c.execute("UPDATE users SET stars=stars-%s WHERE id=%s", (gift["price"], user["id"]))
-        cur = c.execute("""INSERT INTO user_gifts(gift_type_id,owner_user_id,sender_user_id,chat_id,created_at)
-            VALUES(%s,%s,%s,%s,%s) RETURNING id""",
-            (gift["id"], recipient["id"], user["id"], data.chat_id, now))
+        serial = ("FG-NFT-" + secrets.token_hex(5).upper()) if gift["is_collectible"] else None
+        cur = c.execute("""INSERT INTO user_gifts(gift_type_id,owner_user_id,sender_user_id,chat_id,created_at,serial_number)
+            VALUES(%s,%s,%s,%s,%s,%s) RETURNING id""",
+            (gift["id"], recipient["id"], user["id"], data.chat_id, now, serial))
         gift_id = cur.fetchone()["id"]
     return {"ok": True, "gift_id": gift_id, "recipient": recipient["username"],
             "spent_stars": gift["price"], "remaining_stars": balance - gift["price"]}
@@ -703,6 +704,8 @@ def gift_market(authorization: str = Header(default="")):
     with connect() as c:
         rows=c.execute("""SELECT l.id AS listing_id,l.price_stars,l.created_at,
             ug.id AS gift_id,gt.code,gt.title,gt.description,gt.image_url,gt.rarity,
+            gt.is_collectible,gt.collection_name,gt.model_url,gt.animation_url,
+            ug.upgrade_level,ug.serial_number,ug.attributes,
             seller.username AS seller_username
             FROM gift_market_listings l
             JOIN user_gifts ug ON ug.id=l.gift_id

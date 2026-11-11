@@ -8,6 +8,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
+import android.app.AlertDialog;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -75,6 +76,10 @@ public class FreeGramChatFragment extends BaseFragment {
         title.setTextSize(19);
         title.setSingleLine(true);
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        Button details = new Button(context);
+        details.setText("Профиль");
+        header.addView(details);
+        details.setOnClickListener(v -> showChatProfile());
         Button invite = new Button(context);
         invite.setText("Ссылка");
         header.addView(invite);
@@ -179,6 +184,52 @@ public class FreeGramChatFragment extends BaseFragment {
         });
     }
 
+    private void showChatProfile() {
+        executor.execute(() -> {
+            try {
+                JSONObject result = FreeGramApi.request("GET", "/v1/chats/" + chatId, null, true);
+                JSONObject chat = result.optJSONObject("chat");
+                JSONArray members = result.optJSONArray("members");
+                mainHandler.post(() -> {
+                    if (getParentActivity() == null || chat == null) return;
+                    LinearLayout content = new LinearLayout(getParentActivity());
+                    content.setOrientation(LinearLayout.VERTICAL);
+                    content.setPadding(dp(getParentActivity(), 20), dp(getParentActivity(), 8), dp(getParentActivity(), 20), dp(getParentActivity(), 8));
+                    EditText title = new EditText(getParentActivity());
+                    title.setSingleLine(true); title.setHint("Название"); title.setText(chat.optString("title", ""));
+                    EditText description = new EditText(getParentActivity());
+                    description.setHint("Описание"); description.setText(chat.optString("description", ""));
+                    EditText cover = new EditText(getParentActivity());
+                    cover.setSingleLine(true); cover.setHint("Ссылка на обложку"); cover.setText(chat.optString("cover_url", ""));
+                    content.addView(title); content.addView(description); content.addView(cover);
+                    StringBuilder people = new StringBuilder("Участники: ");
+                    people.append(members == null ? 0 : members.length());
+                    if (members != null) for (int i = 0; i < members.length(); i++) {
+                        JSONObject member = members.optJSONObject(i); if (member == null) continue;
+                        String username = member.optString("username", "user");
+                        String display = member.optString("display_name", "");
+                        people.append("\n").append(display.isEmpty() ? username : display + "  @" + username);
+                        String label = member.optString("label", "");
+                        if (member.optBoolean("verified", false)) { people.append("  ✓"); if (!label.isEmpty()) people.append(" ").append(label); }
+                    }
+                    TextView memberList = new TextView(getParentActivity());
+                    memberList.setText(people.toString()); memberList.setTextColor(Color.rgb(75, 88, 105)); memberList.setTextSize(13);
+                    memberList.setPadding(0, dp(getParentActivity(), 12), 0, 0); content.addView(memberList);
+                    new AlertDialog.Builder(getParentActivity()).setTitle("Профиль чата").setView(content)
+                        .setNegativeButton("Закрыть", null).setPositiveButton("Сохранить", (dialog, which) -> executor.execute(() -> {
+                            try {
+                                JSONObject update = new JSONObject();
+                                update.put("title", title.getText().toString().trim());
+                                update.put("description", description.getText().toString().trim());
+                                update.put("cover_url", cover.getText().toString().trim());
+                                FreeGramApi.request("PATCH", "/v1/chats/" + chatId, update, true);
+                                mainHandler.post(() -> { if (status != null) status.setText("Профиль чата сохранён"); });
+                            } catch (Exception e) { mainHandler.post(() -> { if (status != null) status.setText("Не удалось сохранить: " + e.getMessage()); }); }
+                        })).show();
+                });
+            } catch (Exception e) { mainHandler.post(() -> { if (status != null) status.setText("Не удалось открыть профиль чата: " + e.getMessage()); }); }
+        });
+    }
     private void createInvite() {
         executor.execute(() -> {
             try {

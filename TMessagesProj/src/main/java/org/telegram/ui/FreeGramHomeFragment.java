@@ -114,7 +114,7 @@ public class FreeGramHomeFragment extends BaseFragment {
                         if (name.isEmpty()) name = chat.optString("other_username", "Личный чат");
                         String kind = chat.optString("kind", "direct");
                         String last = chat.optString("last_message", "");
-                        TextView row = makeRow((kind.equals("channel") ? "▣  " : kind.equals("group") ? "👥  " : "●  ") + name + (last.isEmpty() ? "" : "\\n" + last));
+                        TextView row = makeRow((kind.equals("channel") ? "▣  " : kind.equals("group") ? "👥  " : "●  ") + name + (last.isEmpty() ? "" : "\n" + last));
                         long id = chat.optLong("id", -1);
                         String chatTitle = name;
                         row.setOnClickListener(v -> { if (id > 0) presentFragment(new FreeGramChatFragment(id, chatTitle), true); });
@@ -213,10 +213,41 @@ public class FreeGramHomeFragment extends BaseFragment {
             try {
                 JSONObject me = FreeGramApi.request("GET", "/v1/me", null, true);
                 android.os.Handler main = new android.os.Handler(getParentActivity().getMainLooper());
-                main.post(() -> new AlertDialog.Builder(getParentActivity())
-                    .setTitle(me.optString("display_name", me.optString("username", "Профиль")))
-                    .setMessage("@" + me.optString("username", "") + "\\nID: " + me.optString("virtual_id", "") + "\\n" + me.optString("bio", ""))
-                    .setPositiveButton("Закрыть", null).show());
+                main.post(() -> {
+                    if (getParentActivity() == null) return;
+                    LinearLayout form = new LinearLayout(getParentActivity());
+                    form.setPadding(24, 8, 24, 4);
+                    form.setOrientation(LinearLayout.VERTICAL);
+                    EditText username = new EditText(getParentActivity());
+                    username.setSingleLine(true);
+                    username.setHint("username");
+                    username.setText(me.optString("username", ""));
+                    EditText display = new EditText(getParentActivity());
+                    display.setSingleLine(true);
+                    display.setHint("Имя");
+                    display.setText(me.optString("display_name", ""));
+                    EditText bio = new EditText(getParentActivity());
+                    bio.setHint("О себе");
+                    bio.setText(me.optString("bio", ""));
+                    form.addView(username);
+                    form.addView(display);
+                    form.addView(bio);
+                    new AlertDialog.Builder(getParentActivity())
+                        .setTitle("Профиль · " + me.optString("virtual_id", ""))
+                        .setView(form)
+                        .setNegativeButton("Закрыть", null)
+                        .setPositiveButton("Сохранить", (d, w) -> executor.execute(() -> {
+                            try {
+                                JSONObject update = new JSONObject();
+                                update.put("username", username.getText().toString().trim());
+                                update.put("display_name", display.getText().toString().trim());
+                                update.put("bio", bio.getText().toString().trim());
+                                FreeGramApi.request("PATCH", "/v1/me", update, true);
+                                android.os.Handler h = new android.os.Handler(getParentActivity().getMainLooper());
+                                h.post(() -> status.setText("Профиль сохранён"));
+                            } catch (Exception e) { showError(e); }
+                        })).show();
+                });
             } catch (Exception e) { showError(e); }
         });
     }

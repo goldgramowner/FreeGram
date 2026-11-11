@@ -106,10 +106,10 @@ async def register_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             {"telegram_id": telegram_user.id}, "bot")
         await update.message.reply_text(
             "Аккаунт FreeGram создан.\n"
-            f'ID: {result["virtual_id"]}\n'
+            f'ID: <code>{result["virtual_id"]}</code>\n'
             f'Код подтверждения: {result["code"]}\n'
             "Сохрани ID и передай его владельцу, чтобы получить виртуальный номер +7. "
-            "Код одноразовый и действует 10 минут.")
+            "Код одноразовый и действует 10 минут.", parse_mode="HTML")
     except Exception:
         log.exception("User registration failed")
         await update.message.reply_text("Не удалось создать аккаунт. Попробуй позже.")
@@ -187,11 +187,11 @@ async def users(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for u in rows[:30]:
             state = "🚫 бан" if u["banned"] else ("✅" if u["verified"] else "⏳")
             lines.append(
-                f'{state} {u["virtual_id"]} | ⭐ {u["stars"]} | '
+                f'{state} <code>{u["virtual_id"]}</code> | ⭐ {u["stars"]} | '
                 f'метка: {u["label"] or "—"}'
             )
         await update.message.reply_text("\n".join(lines),
-                                         reply_markup=owner_keyboard())
+                                         reply_markup=owner_keyboard(), parse_mode="HTML")
     except Exception:
         log.exception("Owner users error")
         await update.message.reply_text("❌ Не удалось загрузить аккаунты API.")
@@ -228,13 +228,14 @@ async def owner_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         u = result["user"]
         await update.message.reply_text(
             "✅ Изменения сохранены в общей БД FreeGram.\n"
-            f'ID: {u["virtual_id"]}\n'
+            f'ID: <code>{u["virtual_id"]}</code>\n'
             f'Статус: {"заблокирован" if u["banned"] else "активен"}\n'
             f'Проверен: {"да" if u["verified"] else "нет"}\n'
             f'Stars: {u["stars"]}\n'
             f'Метка: {u["label"] or "—"}\n'
             f'NFT: {u["nft_username"] or "—"} ({u.get("nft_rarity", "common")})\n'
-            f'Номер: {u["virtual_number"] or "—"}'
+            f'Номер: {u["virtual_number"] or "—"}',
+            parse_mode="HTML"
         )
     except Exception as e:
         log.exception("Owner action failed")
@@ -270,9 +271,9 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines = ["👥 Аккаунты (последние 20):"]
             for u in rows[:20]:
                 state = "🚫" if u["banned"] else ("✅" if u["verified"] else "⏳")
-                lines.append(f'{state} {u["virtual_id"]} | ⭐ {u["stars"]} | {u["label"] or "—"}')
+                lines.append(f'{state} <code>{u["virtual_id"]}</code> | ⭐ {u["stars"]} | {u["label"] or "—"}')
             await query.edit_message_text("\n".join(lines) if rows else "Аккаунтов пока нет.",
-                                           reply_markup=owner_keyboard())
+                                           reply_markup=owner_keyboard(), parse_mode="HTML")
         except Exception:
             log.exception("Owner users callback error")
             await query.edit_message_text("❌ Не удалось получить список.",

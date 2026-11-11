@@ -118,7 +118,7 @@ public class FreeGramHomeFragment extends BaseFragment {
         header.setBackgroundColor(Color.rgb(21, 31, 45));
         pageTitle = text("FreeGram", 21, Color.WHITE, true);
         header.addView(pageTitle, new LinearLayout.LayoutParams(0, -2, 1));
-        header.addView(action("⌕", this::searchDialog));
+        header.addView(action("⌕", this::showContacts));
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(58)));
 
         ScrollView scroll = new ScrollView(context);
@@ -361,9 +361,12 @@ public class FreeGramHomeFragment extends BaseFragment {
         box.addView(username); box.addView(name); box.addView(bio); box.addView(avatar);
         new AlertDialog.Builder(getParentActivity()).setTitle("Профиль").setView(box)
             .setNegativeButton("Отмена", null).setPositiveButton("Сохранить", (d, w) -> {
-                JSONObject body = obj("username", username.getText().toString().trim(),
-                    "display_name", name.getText().toString(),
+                JSONObject body = obj("display_name", name.getText().toString(),
                     "bio", bio.getText().toString(), "avatar_url", avatar.getText().toString());
+                try {
+                    String handle = username.getText().toString().trim().replace("@", "");
+                    if (!handle.isEmpty()) body.put("username", handle);
+                } catch (Exception ignored) {}
                 api("PUT", "/v1/me/profile", body, (result, error) -> {
                     if (error != null) message(error.getMessage()); else showProfile();
                 });

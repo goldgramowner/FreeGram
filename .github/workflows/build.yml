@@ -6,7 +6,6 @@ on:
     branches:
       - master
       - freegram/full-messenger-development
-      - freegram/original-client-integration
 
 concurrency:
   group: freegram-apk-${{ github.ref }}
@@ -54,6 +53,10 @@ jobs:
         run: |
           sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
           yes | sdkmanager --licenses
+
+      - name: Validate Python backend and bot syntax
+        run: |
+          python3 -m py_compile backend/server.py bot/main.py
 
       - name: Build FreeGram debug APK
         run: |

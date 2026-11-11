@@ -241,6 +241,14 @@ public class FreeGramChatFragment extends BaseFragment {
             })).show();
     }
 
+    private String giftIcon(String code) {
+        if ("rose".equals(code)) return "🌹";
+        if ("heart".equals(code)) return "❤️";
+        if ("crown".equals(code)) return "👑";
+        if ("dragon".equals(code)) return "🐉";
+        return "🎁";
+    }
+
     private void showChatGifts() {
         executor.execute(() -> {
             try {
@@ -271,7 +279,7 @@ public class FreeGramChatFragment extends BaseFragment {
                     String[] labels = new String[gifts.length()];
                     for (int i = 0; i < gifts.length(); i++) {
                         JSONObject item = gifts.optJSONObject(i);
-                        labels[i] = item.optString("title") + " · " + item.optLong("price") + " Stars · " + item.optString("rarity");
+                        labels[i] = giftIcon(item.optString("code")) + "  " + item.optString("title") + " · " + item.optLong("price") + " Stars · " + item.optString("rarity");
                     }
                     new AlertDialog.Builder(getParentActivity()).setTitle("Подарок для @" + recipientName)
                         .setItems(labels, (dialog, which) -> executor.execute(() -> {

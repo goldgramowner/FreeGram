@@ -342,6 +342,10 @@ public class FreeGramHomeFragment extends BaseFragment {
     }
 
     private void editProfile(JSONObject old) {
+        EditText username = new EditText(getParentActivity());
+        username.setHint("Username (5-24 символа)");
+        username.setSingleLine(true);
+        username.setText(old.optString("username", ""));
         EditText name = new EditText(getParentActivity());
         name.setHint("Имя");
         name.setText(old.optString("display_name", ""));
@@ -354,10 +358,11 @@ public class FreeGramHomeFragment extends BaseFragment {
         LinearLayout box = new LinearLayout(getParentActivity());
         box.setPadding(dp(20), dp(8), dp(20), dp(8));
         box.setOrientation(LinearLayout.VERTICAL);
-        box.addView(name); box.addView(bio); box.addView(avatar);
+        box.addView(username); box.addView(name); box.addView(bio); box.addView(avatar);
         new AlertDialog.Builder(getParentActivity()).setTitle("Профиль").setView(box)
             .setNegativeButton("Отмена", null).setPositiveButton("Сохранить", (d, w) -> {
-                JSONObject body = obj("display_name", name.getText().toString(),
+                JSONObject body = obj("username", username.getText().toString().trim(),
+                    "display_name", name.getText().toString(),
                     "bio", bio.getText().toString(), "avatar_url", avatar.getText().toString());
                 api("PUT", "/v1/me/profile", body, (result, error) -> {
                     if (error != null) message(error.getMessage()); else showProfile();

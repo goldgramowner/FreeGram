@@ -13,11 +13,11 @@ from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, ContextTypes
 )
 
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-OWNER_TELEGRAM_ID = int(os.environ["OWNER_TELEGRAM_ID"])
-AUTH_API_URL = os.environ["AUTH_API_URL"].rstrip("/")
-BOT_API_SECRET = os.environ["BOT_API_SECRET"]
-OWNER_API_SECRET = os.environ["OWNER_API_SECRET"]
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+OWNER_TELEGRAM_ID = int(os.getenv("OWNER_TELEGRAM_ID", "0"))
+AUTH_API_URL = os.getenv("AUTH_API_URL", "").strip().rstrip("/")
+BOT_API_SECRET = os.getenv("BOT_API_SECRET", "").strip()
+OWNER_API_SECRET = os.getenv("OWNER_API_SECRET", "").strip()
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("freegram-bot")
@@ -36,6 +36,12 @@ def run_http_server():
 
 
 def api_request(path, method="GET", data=None, secret_name=None):
+    if not AUTH_API_URL:
+        raise RuntimeError("AUTH_API_URL is not configured")
+    if secret_name == "bot" and not BOT_API_SECRET:
+        raise RuntimeError("BOT_API_SECRET is not configured")
+    if secret_name == "owner" and not OWNER_API_SECRET:
+        raise RuntimeError("OWNER_API_SECRET is not configured")
     headers = {"Content-Type": "application/json"}
     if secret_name == "bot":
         headers["X-Bot-Secret"] = BOT_API_SECRET
@@ -91,7 +97,7 @@ async def owner_action(virtual_id, action, value=None):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Добро пожаловать в FreeGram!\\n\\n"
+        "Добро пожаловать в FreeGram!\n\\n"
         "Нажми кнопку, чтобы получить ID и код входа в приложение.",
         reply_markup=main_keyboard())
 
@@ -245,7 +251,11 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    telegram_app = Application.builder().token(BOT_TOKEN).build()
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN is required")
+    telegram_app = (Application.builder().token(BOT_TOKEN)
+                    .connect_timeout(20).read_timeout(30)
+                    .write_timeout(30).pool_timeout(20).build())
     telegram_app.add_error_handler(error_handler)
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("owner", owner))
@@ -258,10 +268,9 @@ def main():
         telegram_app.add_handler(CommandHandler(name, owner_command))
     telegram_app.add_handler(CallbackQueryHandler(on_button))
     threading.Thread(target=run_http_server, daemon=True).start()
-    log.info("FreeGram Bot and HTTP server starting")
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    telegram_app.run_polling()
+    log.info("FreeGram Bot and HTTP server starting; owner_id=%s", OWNER_TELEGRAM_ID or "not configured")
+    telegram_app.run_polling(poll_interval=1.0, timeout=30, bootstrap_retries=-1,
+                             drop_pending_updates=False, close_loop=False)
 
 
 if __name__ == "__main__":

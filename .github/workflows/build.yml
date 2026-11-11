@@ -14,6 +14,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Validate Python backend and bot syntax
+        run: python3 -m py_compile backend/server.py bot/main.py
+
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:

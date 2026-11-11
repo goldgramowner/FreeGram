@@ -566,6 +566,8 @@ def refresh_chat_invite(chat_id: int, authorization: str = Header(default="")):
         chat = c.execute("SELECT owner_user_id,kind FROM chats WHERE id=%s", (chat_id,)).fetchone()
         if not chat or chat["owner_user_id"] != user["id"]:
             raise HTTPException(403, "Only chat owner can create invite links")
+        if chat["kind"] == "direct":
+            raise HTTPException(400, "Invite links are available for groups and channels only")
         code = secrets.token_urlsafe(9)
         c.execute("UPDATE chats SET invite_code=%s WHERE id=%s", (code, chat_id))
     return {"ok": True, "invite_code": code, "invite_link": "https://freegram-x.onrender.com/i/" + code}
@@ -577,7 +579,7 @@ def join_by_invite(code: str, authorization: str = Header(default="")):
     now = datetime.now(timezone.utc).isoformat()
     with connect() as c:
         chat = c.execute("SELECT id,kind FROM chats WHERE invite_code=%s", (code,)).fetchone()
-        if not chat:
+        if not chat or chat["kind"] not in ("group", "channel"):
             raise HTTPException(404, "Invite link is invalid or revoked")
         c.execute("""INSERT INTO chat_members(chat_id,user_id,joined_at)
             VALUES(%s,%s,%s) ON CONFLICT(chat_id,user_id) DO NOTHING""",

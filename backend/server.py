@@ -87,6 +87,14 @@ def init_db():
             owner_user_id BIGINT NOT NULL REFERENCES users(id), sender_user_id BIGINT REFERENCES users(id),
             chat_id BIGINT REFERENCES chats(id), created_at TEXT NOT NULL)""")
         c.execute("CREATE INDEX IF NOT EXISTS user_gifts_owner_idx ON user_gifts(owner_user_id,id DESC)")
+        c.execute("ALTER TABLE gift_types ADD COLUMN IF NOT EXISTS is_collectible INTEGER NOT NULL DEFAULT 0")
+        c.execute("ALTER TABLE gift_types ADD COLUMN IF NOT EXISTS collection_name TEXT NOT NULL DEFAULT ''")
+        c.execute("ALTER TABLE gift_types ADD COLUMN IF NOT EXISTS model_url TEXT NOT NULL DEFAULT ''")
+        c.execute("ALTER TABLE gift_types ADD COLUMN IF NOT EXISTS animation_url TEXT NOT NULL DEFAULT ''")
+        c.execute("ALTER TABLE user_gifts ADD COLUMN IF NOT EXISTS upgrade_level INTEGER NOT NULL DEFAULT 0")
+        c.execute("ALTER TABLE user_gifts ADD COLUMN IF NOT EXISTS serial_number TEXT")
+        c.execute("ALTER TABLE user_gifts ADD COLUMN IF NOT EXISTS attributes JSONB NOT NULL DEFAULT '{}'::jsonb")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS user_gifts_serial_uq ON user_gifts(serial_number) WHERE serial_number IS NOT NULL")
         c.execute("""CREATE TABLE IF NOT EXISTS gift_market_listings (
             id BIGSERIAL PRIMARY KEY,
             gift_id BIGINT NOT NULL UNIQUE REFERENCES user_gifts(id) ON DELETE CASCADE,
@@ -102,6 +110,31 @@ def init_db():
         ]:
             c.execute("""INSERT INTO gift_types(code,title,description,price,rarity)
                 VALUES(%s,%s,%s,%s,%s) ON CONFLICT(code) DO NOTHING""", gift)
+        collectible_gifts = [
+            ("golden_rose","Золотая роза","Коллекционная роза",450,"rare","Bloom Collection"),
+            ("ruby_heart","Рубиновое сердце","Сердце с рубиновым сиянием",700,"epic","Treasures"),
+            ("neon_crown","Неоновая корона","Сияющая корона",1200,"epic","Royal"),
+            ("cosmic_dragon","Космический дракон","Дракон из звёздной пыли",2400,"legendary","Cosmos"),
+            ("crystal_ball","Кристальный шар","Редкий кристалл",550,"rare","Treasures"),
+            ("golden_key","Золотой ключ","Ключ коллекционера",800,"epic","Treasures"),
+            ("moon_cat","Лунный кот","Космический талисман",650,"rare","Cosmos"),
+            ("star_ship","Звёздный корабль","Путешествие по галактике",1800,"legendary","Cosmos"),
+            ("diamond_ring","Бриллиантовое кольцо","Коллекционное украшение",1500,"epic","Royal"),
+            ("phoenix","Феникс","Птица возрождения",2600,"legendary","Mythic"),
+            ("sapphire","Сапфир","Глубокий синий самоцвет",500,"rare","Treasures"),
+            ("emerald","Изумруд","Зелёный драгоценный камень",500,"rare","Treasures"),
+            ("ruby","Рубин","Красный драгоценный камень",500,"rare","Treasures"),
+            ("magic_lamp","Волшебная лампа","Легендарный артефакт",2100,"legendary","Mythic"),
+            ("black_hole","Чёрная дыра","Космическая аномалия",3000,"legendary","Cosmos"),
+            ("golden_trophy","Золотой кубок","Награда коллекционера",950,"epic","Royal"),
+            ("butterfly","Кристальная бабочка","Редкий узор крыльев",420,"rare","Bloom Collection"),
+            ("ice_crystal","Ледяной кристалл","Артефакт вечной зимы",780,"epic","Treasures"),
+            ("samurai_mask","Маска самурая","Мифический артефакт",1750,"legendary","Mythic"),
+            ("royal_car","Королевский автомобиль","Коллекционная модель",2300,"legendary","Royal"),
+        ]
+        for gift in collectible_gifts:
+            c.execute("""INSERT INTO gift_types(code,title,description,price,rarity,is_collectible,collection_name)
+                VALUES(%s,%s,%s,%s,%s,1,%s) ON CONFLICT(code) DO NOTHING""", gift)
 
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
@@ -580,7 +613,8 @@ def join_by_invite(code: str, authorization: str = Header(default="")):
 def gift_catalog(authorization: str = Header(default="")):
     authenticated_user(authorization)
     with connect() as c:
-        rows = c.execute("""SELECT code,title,description,price,image_url,rarity
+        rows = c.execute("""SELECT code,title,description,price,image_url,rarity,
+            is_collectible,collection_name,model_url,animation_url
             FROM gift_types WHERE active=1 ORDER BY price,id""").fetchall()
     return {"ok": True, "gifts": rows}
 
@@ -590,6 +624,8 @@ def my_gifts(authorization: str = Header(default="")):
     user = authenticated_user(authorization)
     with connect() as c:
         rows = c.execute("""SELECT ug.id,gt.code,gt.title,gt.description,gt.image_url,gt.rarity,
+            gt.is_collectible,gt.collection_name,gt.model_url,gt.animation_url,
+            ug.upgrade_level,ug.serial_number,ug.attributes,
             sender.username AS sender_username,ug.created_at
             FROM user_gifts ug JOIN gift_types gt ON gt.id=ug.gift_type_id
             LEFT JOIN users sender ON sender.id=ug.sender_user_id
@@ -634,6 +670,32 @@ def send_gift(data: GiftSend, authorization: str = Header(default="")):
     return {"ok": True, "gift_id": gift_id, "recipient": recipient["username"],
             "spent_stars": gift["price"], "remaining_stars": balance - gift["price"]}
 
+
+@app.post("/v1/shop/gifts/{gift_id}/upgrade")
+def upgrade_owned_gift(gift_id: int, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    with connect() as c:
+        gift = c.execute("""SELECT ug.id,ug.upgrade_level,gt.is_collectible
+            FROM user_gifts ug JOIN gift_types gt ON gt.id=ug.gift_type_id
+            WHERE ug.id=%s AND ug.owner_user_id=%s FOR UPDATE""",
+            (gift_id,user["id"])).fetchone()
+        if not gift: raise HTTPException(404,"Gift not found in your collection")
+        level = gift["upgrade_level"]
+        if level >= 5: raise HTTPException(400,"Gift is already at maximum level")
+        cost = (level + 1) * 500
+        wallet = c.execute("SELECT stars FROM users WHERE id=%s FOR UPDATE",(user["id"],)).fetchone()
+        if wallet["stars"] < cost: raise HTTPException(400,"Not enough Stars")
+        new_level = level + 1
+        serial = None
+        if gift["is_collectible"] and new_level >= 1:
+            serial = "FG-NFT-" + secrets.token_hex(5).upper()
+        c.execute("UPDATE users SET stars=stars-%s WHERE id=%s",(cost,user["id"]))
+        c.execute("""UPDATE user_gifts SET upgrade_level=%s,
+            serial_number=COALESCE(serial_number,%s),
+            attributes=jsonb_build_object('level',%s,'finish',CASE WHEN %s>=4 THEN 'legendary' WHEN %s>=2 THEN 'shimmer' ELSE 'classic' END)
+            WHERE id=%s""",(new_level,serial,new_level,new_level,new_level,gift_id))
+    return {"ok":True,"gift_id":gift_id,"upgrade_level":new_level,
+            "spent_stars":cost,"remaining_stars":wallet["stars"]-cost,"serial_number":serial}
 
 @app.get("/v1/shop/market")
 def gift_market(authorization: str = Header(default="")):

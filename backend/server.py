@@ -256,10 +256,12 @@ def authenticated_user(authorization):
 def list_chats(authorization: str = Header(default="")):
     user = authenticated_user(authorization)
     with connect() as c:
-        rows = c.execute("""SELECT ch.id,ch.kind,ch.title,ch.created_at,
+        rows = c.execute("""SELECT ch.id,ch.kind,ch.title,ch.description,ch.cover_url,
+            ch.invite_code,ch.created_at,
             (SELECT m.body FROM messages m WHERE m.chat_id=ch.id ORDER BY m.id DESC LIMIT 1) AS last_message,
             (SELECT u.username FROM chat_members cm JOIN users u ON u.id=cm.user_id
-             WHERE cm.chat_id=ch.id AND cm.user_id<>%s LIMIT 1) AS other_username
+             WHERE cm.chat_id=ch.id AND cm.user_id<>%s LIMIT 1) AS other_username,
+            (SELECT COUNT(*) FROM chat_members cm WHERE cm.chat_id=ch.id) AS member_count
             FROM chats ch JOIN chat_members mine ON mine.chat_id=ch.id
             WHERE mine.user_id=%s ORDER BY ch.id DESC""", (user["id"],user["id"])).fetchall()
     return {"ok": True, "chats": rows}
@@ -291,8 +293,10 @@ def create_chat(data: ChatCreate, authorization: str = Header(default="")):
             title=(data.title or "").strip()
             if len(title)<1:
                 raise HTTPException(400, "Chat title required")
-            cur=c.execute("""INSERT INTO chats(kind,title,owner_user_id,created_at)
-                VALUES(%s,%s,%s,%s) RETURNING id""",(data.kind,title,user["id"],now))
+            invite_code = secrets.token_urlsafe(9)
+            cur=c.execute("""INSERT INTO chats(kind,title,owner_user_id,created_at,invite_code)
+                VALUES(%s,%s,%s,%s,%s) RETURNING id""",
+                (data.kind,title,user["id"],now,invite_code))
             chat_id=cur.fetchone()["id"]
             c.execute("INSERT INTO chat_members(chat_id,user_id,joined_at) VALUES(%s,%s,%s)",
                       (chat_id,user["id"],now))

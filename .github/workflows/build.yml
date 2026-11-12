@@ -9,6 +9,7 @@ on:
       - freegram/final-independent-messenger
       - freegram/mega-combined-build
       - freegram/device-auto-account
+      - freegram/build-143-owner-panel
 
 concurrency:
   group: freegram-apk-${{ github.ref }}

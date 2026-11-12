@@ -3371,6 +3371,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 showItemOptions();
                 return true;
             });
+
+            ActionBarMenuItem freeGramItem = menu.addItem(7, R.drawable.msg_settings);
+            freeGramItem.setContentDescription("FreeGram");
+            freeGramItem.setOnClickListener(v -> presentFragment(new FreeGramHomeFragment(), true));
         }
 
         searchItem.setSearchFieldHint(getString(R.string.Search));

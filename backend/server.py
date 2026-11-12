@@ -897,3 +897,43 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
         result = c.execute("""SELECT virtual_id, verified, banned, stars, label,
             nft_username, nft_rarity, virtual_number FROM users WHERE id=%s""", (user["id"],)).fetchone()
     return {"ok": True, "user": result}
+
+
+# Compatibility routes for the combined native Telegram-style FreeGram client.
+@app.get("/v1/chats/search")
+def search_public_chats(q: str, authorization: str = Header(default="")):
+    authenticated_user(authorization)
+    query = q.strip()
+    if len(query) < 2 or len(query) > 60:
+        raise HTTPException(400, "Search query must contain 2-60 characters")
+    with connect() as c:
+        rows = c.execute("""SELECT ch.id,ch.kind,ch.title,ch.description,
+            (SELECT COUNT(*) FROM chat_members cm WHERE cm.chat_id=ch.id) AS member_count
+            FROM chats ch WHERE ch.kind IN ('group','channel')
+            AND (LOWER(ch.title) LIKE LOWER(%s) OR LOWER(ch.description) LIKE LOWER(%s))
+            ORDER BY ch.id DESC LIMIT 30""", (f"%{query}%", f"%{query}%")).fetchall()
+    return {"ok": True, "chats": rows}
+
+
+@app.post("/v1/chats/{chat_id}/join")
+def join_public_chat(chat_id: int, authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    now = datetime.now(timezone.utc).isoformat()
+    with connect() as c:
+        chat = c.execute("SELECT id,kind FROM chats WHERE id=%s", (chat_id,)).fetchone()
+        if not chat or chat["kind"] not in ("group", "channel"):
+            raise HTTPException(404, "Public group or channel not found")
+        c.execute("""INSERT INTO chat_members(chat_id,user_id,joined_at)
+            VALUES(%s,%s,%s) ON CONFLICT(chat_id,user_id) DO NOTHING""",
+            (chat_id, user["id"], now))
+    return {"ok": True, "chat_id": chat_id, "kind": chat["kind"]}
+
+
+@app.post("/v1/shop/gifts/{code}/buy")
+def buy_gift_by_code(code: str, authorization: str = Header(default="")):
+    return buy_catalog_gift(GiftBuy(gift_code=code), authorization)
+
+
+@app.post("/v1/shop/my-gifts/{gift_id}/upgrade")
+def upgrade_my_gift_alias(gift_id: int, authorization: str = Header(default="")):
+    return upgrade_owned_gift(gift_id, authorization)

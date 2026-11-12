@@ -193,6 +193,34 @@ def init_db():
             ("royal_chess","Королевские шахматы","Коллекционная шахматная фигура",1500,"epic","Royal"),
             ("time_crystal","Кристалл времени","Артефакт вне времени",2600,"legendary","Treasures"),
         ])
+        collectible_gifts.extend([
+            ("plush_pepe","Plush Pepe","Telegram-inspired collectible gift",900,"legendary","Telegram Gifts"),
+            ("durovs_cap","Durov's Cap","Telegram-inspired collectible gift",1200,"rare","Telegram Gifts"),
+            ("heart_locket","Heart Locket","Telegram-inspired collectible gift",700,"rare","Telegram Gifts"),
+            ("scared_cat","Scared Cat","Telegram-inspired collectible gift",650,"epic","Telegram Gifts"),
+            ("loot_bag","Loot Bag","Telegram-inspired collectible gift",800,"rare","Telegram Gifts"),
+            ("precious_peach","Precious Peach","Telegram-inspired collectible gift",750,"rare","Telegram Gifts"),
+            ("heroic_helmet","Heroic Helmet","Telegram-inspired collectible gift",1100,"epic","Telegram Gifts"),
+            ("swiss_watch","Swiss Watch","Telegram-inspired collectible gift",1300,"legendary","Telegram Gifts"),
+            ("ion_gem","Ion Gem","Telegram-inspired collectible gift",900,"rare","Telegram Gifts"),
+            ("gem_signet","Gem Signet","Telegram-inspired collectible gift",950,"epic","Telegram Gifts"),
+            ("resistance_dog","Resistance Dog","Telegram-inspired collectible gift",1000,"rare","Telegram Gifts"),
+            ("homemade_cake","Homemade Cake","Telegram-inspired collectible gift",650,"rare","Telegram Gifts"),
+            ("jelly_bunny","Jelly Bunny","Telegram-inspired collectible gift",700,"epic","Telegram Gifts"),
+            ("signet_ring","Signet Ring","Telegram-inspired collectible gift",900,"rare","Telegram Gifts"),
+            ("crystal_ball_tg","Crystal Ball","Telegram-inspired collectible gift",850,"legendary","Telegram Gifts"),
+            ("genie_lamp","Genie Lamp","Telegram-inspired collectible gift",1200,"epic","Telegram Gifts"),
+            ("santa_hat","Santa Hat","Telegram-inspired collectible gift",650,"rare","Telegram Gifts"),
+            ("sleigh_bell","Sleigh Bell","Telegram-inspired collectible gift",600,"rare","Telegram Gifts"),
+            ("xmas_stocking","Xmas Stocking","Telegram-inspired collectible gift",600,"epic","Telegram Gifts"),
+            ("witch_hat","Witch Hat","Telegram-inspired collectible gift",750,"rare","Telegram Gifts"),
+            ("valentine_box","Valentine Box","Telegram-inspired collectible gift",800,"rare","Telegram Gifts"),
+            ("khabibs_papakha","Khabib's Papakha","Telegram-inspired collectible gift",1400,"legendary","Telegram Gifts"),
+            ("surge_board","Surge Board","Telegram-inspired collectible gift",1000,"rare","Telegram Gifts"),
+            ("money_pot","Money Pot","Telegram-inspired collectible gift",750,"rare","Telegram Gifts"),
+            ("star_notepad","Star Notepad","Telegram-inspired collectible gift",500,"epic","Telegram Gifts"),
+            ("jester_hat","Jester Hat","Telegram-inspired collectible gift",700,"rare","Telegram Gifts")
+        ])
         for gift in collectible_gifts:
             c.execute("""INSERT INTO gift_types(code,title,description,price,rarity,is_collectible,collection_name)
                 VALUES(%s,%s,%s,%s,%s,1,%s) ON CONFLICT(code) DO NOTHING""", gift)

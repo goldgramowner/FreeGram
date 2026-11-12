@@ -268,7 +268,8 @@ class Verification(BaseModel):
     code: str
 
 class OwnerAction(BaseModel):
-    virtual_id: str = Field(min_length=3, max_length=80)
+    username: str | None = Field(default=None, min_length=5, max_length=24)
+    virtual_id: str | None = Field(default=None, min_length=3, max_length=80)
     action: str
     value: str | int | None = None
 
@@ -974,7 +975,7 @@ def owner_chat_action(data: OwnerChatAction, x_owner_secret: str = Header(defaul
 def owner_users(x_owner_secret: str = Header(default=""), authorization: str = Header(default="")):
     require_owner(x_owner_secret, authorization)
     with connect() as c:
-        rows = c.execute("""SELECT virtual_id, telegram_id, verified, banned,
+        rows = c.execute("""SELECT username, virtual_id, telegram_id, verified, banned,
             stars, label, nft_username, nft_rarity, virtual_number, created_at
             FROM users ORDER BY id DESC LIMIT 200""").fetchall()
     return {"ok": True, "users": rows}
@@ -987,7 +988,14 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default=""), au
     if data.action not in actions:
         raise HTTPException(400, "Unknown action")
     with connect() as c:
-        user = c.execute("SELECT id, stars FROM users WHERE virtual_id=%s", (data.virtual_id.upper(),)).fetchone()
+        target = (data.username or "").strip().lstrip("@").lower()
+        virtual_id = (data.virtual_id or "").strip().upper()
+        if target:
+            user = c.execute("SELECT id, stars FROM users WHERE LOWER(username)=%s", (target,)).fetchone()
+        elif virtual_id:
+            user = c.execute("SELECT id, stars FROM users WHERE UPPER(virtual_id)=%s", (virtual_id,)).fetchone()
+        else:
+            raise HTTPException(400, "username or virtual_id required")
         if not user:
             raise HTTPException(404, "User not found")
         if data.action == "ban":

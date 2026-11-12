@@ -3373,8 +3373,37 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             });
 
             ActionBarMenuItem freeGramItem = menu.addItem(7, R.drawable.msg_settings);
-            freeGramItem.setContentDescription("FreeGram");
-            freeGramItem.setOnClickListener(v -> presentFragment(new FreeGramHomeFragment(), true));
+            freeGramItem.setContentDescription("Панель владельца");
+            freeGramItem.setOnClickListener(v -> {
+                final Activity activity = getParentActivity();
+                new Thread(() -> {
+                    boolean allowed = false;
+                    String error = null;
+                    try {
+                        if (FreeGramApi.ensureDeviceSession()) {
+                            org.json.JSONObject access = FreeGramApi.request("GET", "/v1/owner/me", null, true);
+                            allowed = access.optBoolean("is_owner", false);
+                        } else {
+                            error = "Не удалось подключиться к FreeGram";
+                        }
+                    } catch (Exception e) {
+                        error = e.getMessage();
+                    }
+                    final boolean ownerAllowed = allowed;
+                    final String failure = error;
+                    if (activity != null) {
+                        new android.os.Handler(activity.getMainLooper()).post(() -> {
+                            if (ownerAllowed) {
+                                presentFragment(new FreeGramOwnerFragment(), true);
+                            } else {
+                                Toast.makeText(activity,
+                                    failure == null ? "Доступ владельца не назначен этому аккаунту" : failure,
+                                    Toast.LENGTH_LONG).show();
+                            }
+                        });
+                    }
+                }, "freegram-owner-access").start();
+            });
         }
 
         searchItem.setSearchFieldHint(getString(R.string.Search));

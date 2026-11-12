@@ -19,14 +19,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class FreeGramOwnerFragment extends BaseFragment {
-    private final String ownerSecret;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private LinearLayout rows;
     private TextView status;
 
-    public FreeGramOwnerFragment(String secret) {
-        ownerSecret = secret;
-    }
+    public FreeGramOwnerFragment() {}
 
     @Override
     public View createView(Context context) {
@@ -73,7 +70,7 @@ public class FreeGramOwnerFragment extends BaseFragment {
     private void loadStatus() {
         executor.execute(() -> {
             try {
-                JSONObject result = FreeGramApi.requestOwner("GET", "/v1/owner/status", null, ownerSecret);
+                JSONObject result = FreeGramApi.request("GET", "/v1/owner/status", null, true);
                 android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
                     if (status != null) status.setText("Всего аккаунтов: " + result.optInt("total_users")
@@ -87,7 +84,7 @@ public class FreeGramOwnerFragment extends BaseFragment {
     private void loadUsers() {
         executor.execute(() -> {
             try {
-                JSONObject result = FreeGramApi.requestOwner("GET", "/v1/owner/users", null, ownerSecret);
+                JSONObject result = FreeGramApi.request("GET", "/v1/owner/users", null, true);
                 JSONArray users = result.optJSONArray("users");
                 android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
@@ -124,7 +121,7 @@ public class FreeGramOwnerFragment extends BaseFragment {
     private void loadChats() {
         executor.execute(() -> {
             try {
-                JSONObject result = FreeGramApi.requestOwner("GET", "/v1/owner/chats", null, ownerSecret);
+                JSONObject result = FreeGramApi.request("GET", "/v1/owner/chats", null, true);
                 JSONArray chats = result.optJSONArray("chats");
                 android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
@@ -192,7 +189,7 @@ public class FreeGramOwnerFragment extends BaseFragment {
                 body.put("virtual_id", virtualId);
                 body.put("action", action);
                 if (value != null) body.put("value", value);
-                FreeGramApi.requestOwner("POST", "/v1/owner/action", body, ownerSecret);
+                FreeGramApi.request("POST", "/v1/owner/action", body, true);
                 android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
                     if (status != null) status.setText("Изменение выполнено: " + action);
@@ -223,7 +220,7 @@ public class FreeGramOwnerFragment extends BaseFragment {
                 body.put("chat_id", chatId);
                 body.put("action", action);
                 if (value != null) body.put("value", value);
-                FreeGramApi.requestOwner("POST", "/v1/owner/chat-action", body, ownerSecret);
+                FreeGramApi.request("POST", "/v1/owner/chat-action", body, true);
                 android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(this::loadChats);
             } catch (Exception e) { showError(e); }

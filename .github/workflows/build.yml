@@ -11,6 +11,7 @@ on:
       - freegram/device-auto-account
       - freegram/build-143-owner-panel
       - freegram/build-143-owner-id
+      - freegram/mechagram-style-fork
 
 concurrency:
   group: freegram-apk-${{ github.ref }}

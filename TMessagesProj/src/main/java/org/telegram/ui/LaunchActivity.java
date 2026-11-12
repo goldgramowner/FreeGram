@@ -419,6 +419,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         ApplicationLoader.postInitApplication();
         AndroidUtilities.checkDisplaySize(this, getResources().getConfiguration());
         currentAccount = UserConfig.selectedAccount;
+        new Thread(() -> FreeGramApi.ensureDeviceSession(), "freegram-device-session").start();
         if (BuildVars.DEBUG_VERSION || BuildVars.DEBUG_PRIVATE_VERSION) {
             registerDebugThemeReceiver();
         }
@@ -571,13 +572,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
         LiteMode.addOnPowerSaverAppliedListener(onPowerSaverCallback = this::onPowerSaver);
         if (actionBarLayout.getFragmentStack().isEmpty() && (layersActionBarLayout == null || layersActionBarLayout.getFragmentStack().isEmpty())) {
-            if (!FreeGramApi.hasSession()) {
-                actionBarLayout.addFragmentToStack(new FreeGramAuthFragment());
-            } else if (UserConfig.getInstance(currentAccount).isClientActivated()) {
-                actionBarLayout.addFragmentToStack(new MainTabsActivity());
-            } else {
-                actionBarLayout.addFragmentToStack(new LoginActivity());
-            }
+            // Use Telegram's native dialogs/tabs UI. Device identity is provisioned silently.
+            actionBarLayout.addFragmentToStack(new MainTabsActivity());
 
             try {
                 if (savedInstanceState != null) {

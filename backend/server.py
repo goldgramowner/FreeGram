@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 BOT_SECRET = os.getenv("BOT_API_SECRET", "")
 OWNER_SECRET = os.getenv("OWNER_API_SECRET", "")
+OWNER_FREEGRAM_ID = os.getenv("OWNER_FREEGRAM_ID", "").strip().upper()
+OWNER_FREEGRAM_USERNAME = os.getenv("OWNER_FREEGRAM_USERNAME", "").strip().lstrip("@").lower()
 
 def connect():
     if not DATABASE_URL:
@@ -39,6 +41,7 @@ def init_db():
         for sql in [
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS banned INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS stars BIGINT NOT NULL DEFAULT 1000",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS premium INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS label TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS nft_username TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS nft_rarity TEXT NOT NULL DEFAULT ''",
@@ -47,6 +50,15 @@ def init_db():
             c.execute(sql)
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_nft_username_uq ON users (LOWER(nft_username)) WHERE nft_username IS NOT NULL")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_virtual_number_uq ON users (virtual_number) WHERE virtual_number IS NOT NULL")
+        c.execute("""CREATE TABLE IF NOT EXISTS user_virtual_numbers (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            number TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            assigned_by TEXT NOT NULL DEFAULT 'owner')""")
+        c.execute("""INSERT INTO user_virtual_numbers(user_id,number,created_at)
+            SELECT id,virtual_number,created_at FROM users WHERE virtual_number IS NOT NULL
+            ON CONFLICT(number) DO NOTHING""")
         c.execute("""CREATE TABLE IF NOT EXISTS chats (
             id BIGSERIAL PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('direct','group','channel')),
             title TEXT NOT NULL DEFAULT '', direct_key TEXT UNIQUE,
@@ -60,6 +72,14 @@ def init_db():
             user_id BIGINT NOT NULL REFERENCES users(id), body TEXT NOT NULL,
             created_at TEXT NOT NULL)""")
         c.execute("CREATE INDEX IF NOT EXISTS messages_chat_id_idx ON messages(chat_id,id)")
+        c.execute("""CREATE TABLE IF NOT EXISTS stars_transactions (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            delta BIGINT NOT NULL CHECK(delta <> 0),
+            reason TEXT NOT NULL,
+            counterparty_username TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS stars_transactions_user_idx ON stars_transactions(user_id,id DESC)")
         c.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id BIGINT REFERENCES messages(id) ON DELETE SET NULL")
         c.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at TEXT")
         c.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at TEXT")
@@ -109,6 +129,22 @@ def init_db():
             ("heart", "Сердце", "Подарок с теплом", 35, "common"),
             ("crown", "Корона", "Особый подарок", 250, "rare"),
             ("dragon", "Дракон", "Коллекционный подарок", 900, "epic"),
+            ("bouquet", "Букет", "Букет цветов", 45, "common"),
+            ("teddy_bear", "Мишка", "Плюшевый подарок", 60, "common"),
+            ("cake", "Торт", "Сладкий сюрприз", 75, "common"),
+            ("balloon", "Шарик", "Праздничный шар", 25, "common"),
+            ("chocolate", "Шоколад", "Коробка шоколада", 55, "common"),
+            ("coffee", "Кофе", "Чашка кофе", 30, "common"),
+            ("sunflower", "Подсолнух", "Яркий цветок", 40, "common"),
+            ("tulip", "Тюльпан", "Весенний цветок", 35, "common"),
+            ("champagne", "Праздничный бокал", "Подарок для праздника", 90, "rare"),
+            ("medal", "Медаль", "Знак признания", 120, "rare"),
+            ("diamond", "Алмаз", "Сияющий камень", 180, "rare"),
+            ("fireworks", "Фейерверк", "Праздничное сияние", 110, "rare"),
+            ("rocket", "Ракета", "Вперёд к звёздам", 95, "rare"),
+            ("trophy", "Кубок", "Награда за победу", 220, "rare"),
+            ("unicorn", "Единорог", "Сказочный подарок", 350, "epic"),
+            ("planet", "Планета", "Маленькая вселенная", 160, "rare"),
         ]:
             c.execute("""INSERT INTO gift_types(code,title,description,price,rarity)
                 VALUES(%s,%s,%s,%s,%s) ON CONFLICT(code) DO NOTHING""", gift)
@@ -134,6 +170,76 @@ def init_db():
             ("samurai_mask","Маска самурая","Мифический артефакт",1750,"legendary","Mythic"),
             ("royal_car","Королевский автомобиль","Коллекционная модель",2300,"legendary","Royal"),
         ]
+        collectible_gifts.extend([
+            ("aurora_orb","Сфера Авроры","Переливы северного сияния",820,"epic","Aurora"),
+            ("solar_crown","Солнечная корона","Корона солнечного света",1450,"epic","Royal"),
+            ("void_wolf","Волк Пустоты","Страж далёкой галактики",2200,"legendary","Cosmos"),
+            ("starlight_unicorn","Звёздный единорог","Сияющий мифический спутник",1900,"legendary","Mythic"),
+            ("crystal_fox","Кристальная лиса","Лесной дух из хрусталя",950,"epic","Mythic"),
+            ("golden_eagle","Золотой орёл","Символ силы и свободы",1300,"epic","Mythic"),
+            ("ocean_pearl","Жемчужина океана","Редкая жемчужина глубин",620,"rare","Treasures"),
+            ("storm_bottle","Бутылка шторма","Гроза в стеклянном сосуде",1100,"epic","Elements"),
+            ("ember_blade","Клинок углей","Клинок с огненным сиянием",1700,"legendary","Mythic"),
+            ("frost_crown","Ледяная корона","Корона вечной зимы",1250,"epic","Elements"),
+            ("jade_dragon","Нефритовый дракон","Дракон из зелёного нефрита",2100,"legendary","Mythic"),
+            ("coral_reef","Коралловый риф","Миниатюрный подводный мир",740,"rare","Elements"),
+            ("meteor","Метеорит","Осколок далёкой звезды",890,"epic","Cosmos"),
+            ("nebula_jar","Туманность в колбе","Космическая пыль внутри стекла",1050,"epic","Cosmos"),
+            ("lunar_clock","Лунные часы","Часы лунного цикла",980,"epic","Treasures"),
+            ("royal_scepter","Королевский скипетр","Знак древней королевской власти",1850,"legendary","Royal"),
+            ("golden_compass","Золотой компас","Компас искателя сокровищ",780,"rare","Treasures"),
+            ("crystal_heart","Кристальное сердце","Сердце из чистого кристалла",900,"epic","Treasures"),
+            ("rainbow_wing","Радужное крыло","Крыло с радужным переливом",1150,"epic","Bloom Collection"),
+            ("night_panther","Ночная пантера","Тёмный хранитель коллекции",2050,"legendary","Mythic"),
+            ("solar_system","Солнечная система","Миниатюрная модель космоса",2800,"legendary","Cosmos"),
+            ("golden_skull","Золотой череп","Редкий артефакт коллекции",1600,"epic","Treasures"),
+            ("amethyst","Аметист","Фиолетовый драгоценный камень",540,"rare","Treasures"),
+            ("opal","Опал","Переливающийся редкий минерал",590,"rare","Treasures"),
+            ("topaz","Топаз","Золотистый самоцвет",510,"rare","Treasures"),
+            ("obsidian_rose","Обсидиановая роза","Чёрный цветок из обсидиана",990,"epic","Bloom Collection"),
+            ("eternal_flame","Вечное пламя","Неугасимое магическое пламя",1750,"legendary","Elements"),
+            ("thunder_hammer","Молот грома","Мифический молот грозы",2150,"legendary","Elements"),
+            ("cloud_whale","Облачный кит","Небесный странник",1850,"legendary","Cosmos"),
+            ("mini_mecha","Мини-меха","Коллекционный робот",1950,"legendary","Mecha"),
+            ("neon_skate","Неоновый скейт","Светящийся скейтборд",860,"epic","Mecha"),
+            ("cyber_mask","Кибер-маска","Футуристическая маска",1050,"epic","Mecha"),
+            ("holo_cube","Голографический куб","Геометрический артефакт",920,"epic","Mecha"),
+            ("quantum_core","Квантовое ядро","Энергетическое ядро",2400,"legendary","Mecha"),
+            ("ruby_panther","Рубиновая пантера","Хищник с рубиновым сиянием",2300,"legendary","Mythic"),
+            ("golden_swan","Золотой лебедь","Изящная золотая статуэтка",1350,"epic","Bloom Collection"),
+            ("moon_blossom","Лунный цветок","Цветок ночного свечения",670,"rare","Bloom Collection"),
+            ("sakura_tree","Дерево сакуры","Миниатюрная сакура",1200,"epic","Bloom Collection"),
+            ("royal_chess","Королевские шахматы","Коллекционная шахматная фигура",1500,"epic","Royal"),
+            ("time_crystal","Кристалл времени","Артефакт вне времени",2600,"legendary","Treasures"),
+        ])
+        collectible_gifts.extend([
+            ("plush_pepe","Plush Pepe","Telegram-inspired collectible gift",900,"legendary","Telegram Gifts"),
+            ("durovs_cap","Durov's Cap","Telegram-inspired collectible gift",1200,"rare","Telegram Gifts"),
+            ("heart_locket","Heart Locket","Telegram-inspired collectible gift",700,"rare","Telegram Gifts"),
+            ("scared_cat","Scared Cat","Telegram-inspired collectible gift",650,"epic","Telegram Gifts"),
+            ("loot_bag","Loot Bag","Telegram-inspired collectible gift",800,"rare","Telegram Gifts"),
+            ("precious_peach","Precious Peach","Telegram-inspired collectible gift",750,"rare","Telegram Gifts"),
+            ("heroic_helmet","Heroic Helmet","Telegram-inspired collectible gift",1100,"epic","Telegram Gifts"),
+            ("swiss_watch","Swiss Watch","Telegram-inspired collectible gift",1300,"legendary","Telegram Gifts"),
+            ("ion_gem","Ion Gem","Telegram-inspired collectible gift",900,"rare","Telegram Gifts"),
+            ("gem_signet","Gem Signet","Telegram-inspired collectible gift",950,"epic","Telegram Gifts"),
+            ("resistance_dog","Resistance Dog","Telegram-inspired collectible gift",1000,"rare","Telegram Gifts"),
+            ("homemade_cake","Homemade Cake","Telegram-inspired collectible gift",650,"rare","Telegram Gifts"),
+            ("jelly_bunny","Jelly Bunny","Telegram-inspired collectible gift",700,"epic","Telegram Gifts"),
+            ("signet_ring","Signet Ring","Telegram-inspired collectible gift",900,"rare","Telegram Gifts"),
+            ("crystal_ball_tg","Crystal Ball","Telegram-inspired collectible gift",850,"legendary","Telegram Gifts"),
+            ("genie_lamp","Genie Lamp","Telegram-inspired collectible gift",1200,"epic","Telegram Gifts"),
+            ("santa_hat","Santa Hat","Telegram-inspired collectible gift",650,"rare","Telegram Gifts"),
+            ("sleigh_bell","Sleigh Bell","Telegram-inspired collectible gift",600,"rare","Telegram Gifts"),
+            ("xmas_stocking","Xmas Stocking","Telegram-inspired collectible gift",600,"epic","Telegram Gifts"),
+            ("witch_hat","Witch Hat","Telegram-inspired collectible gift",750,"rare","Telegram Gifts"),
+            ("valentine_box","Valentine Box","Telegram-inspired collectible gift",800,"rare","Telegram Gifts"),
+            ("khabibs_papakha","Khabib's Papakha","Telegram-inspired collectible gift",1400,"legendary","Telegram Gifts"),
+            ("surge_board","Surge Board","Telegram-inspired collectible gift",1000,"rare","Telegram Gifts"),
+            ("money_pot","Money Pot","Telegram-inspired collectible gift",750,"rare","Telegram Gifts"),
+            ("star_notepad","Star Notepad","Telegram-inspired collectible gift",500,"epic","Telegram Gifts"),
+            ("jester_hat","Jester Hat","Telegram-inspired collectible gift",700,"rare","Telegram Gifts")
+        ])
         for gift in collectible_gifts:
             c.execute("""INSERT INTO gift_types(code,title,description,price,rarity,is_collectible,collection_name)
                 VALUES(%s,%s,%s,%s,%s,1,%s) ON CONFLICT(code) DO NOTHING""", gift)
@@ -145,9 +251,21 @@ def require_bot(secret):
     if not BOT_SECRET or secret != BOT_SECRET:
         raise HTTPException(403, "Bot access denied")
 
-def require_owner(secret):
-    if not OWNER_SECRET or secret != OWNER_SECRET:
-        raise HTTPException(403, "Owner access denied")
+def require_owner(secret, authorization=""):
+    if OWNER_SECRET and secrets.compare_digest(secret or "", OWNER_SECRET):
+        return True
+    if authorization.startswith("Bearer ") and (OWNER_FREEGRAM_ID or OWNER_FREEGRAM_USERNAME):
+        with connect() as c:
+            owner = c.execute(
+                """SELECT id FROM users WHERE token_hash=%s AND verified=1 AND banned=0
+                   AND ((%s <> '' AND UPPER(virtual_id)=%s)
+                     OR (%s <> '' AND LOWER(COALESCE(username,''))=%s))""",
+                (digest(authorization[7:]), OWNER_FREEGRAM_ID, OWNER_FREEGRAM_ID,
+                 OWNER_FREEGRAM_USERNAME, OWNER_FREEGRAM_USERNAME)
+            ).fetchone()
+        if owner:
+            return True
+    raise HTTPException(403, "Owner access denied")
 
 class Registration(BaseModel):
     telegram_id: int
@@ -172,7 +290,8 @@ class Verification(BaseModel):
     code: str
 
 class OwnerAction(BaseModel):
-    virtual_id: str = Field(min_length=3, max_length=80)
+    username: str | None = Field(default=None, min_length=5, max_length=24)
+    virtual_id: str | None = Field(default=None, min_length=3, max_length=80)
     action: str
     value: str | int | None = None
 
@@ -300,6 +419,9 @@ def register_device(data: DeviceRegistration):
             RETURNING id, virtual_id, banned""",
             (device_id, virtual_id, username, now))
         user = cur.fetchone()
+        if user is not None:
+            c.execute("""INSERT INTO stars_transactions(user_id,delta,reason,created_at)
+                VALUES(%s,1000,%s,%s)""", (user["id"],"Стартовый баланс FreeGram",now))
         if user is None:
             user = c.execute(
                 "SELECT id, virtual_id, banned FROM users WHERE device_id=%s",
@@ -385,7 +507,7 @@ def me(authorization: str = Header(default="")):
         raise HTTPException(401, "Authorization required")
     with connect() as c:
         user = c.execute("""SELECT virtual_id, username, telegram_id, verified, created_at,
-            banned, stars, label, nft_username, nft_rarity, virtual_number,
+            banned, stars, premium, label, nft_username, nft_rarity, virtual_number,
             display_name, bio, avatar_url
             FROM users WHERE token_hash=%s""", (digest(authorization[7:]),)).fetchone()
     if not user or not user["verified"] or user["banned"]:
@@ -402,6 +524,16 @@ def authenticated_user(authorization):
     if not user or not user["verified"] or user["banned"]:
         raise HTTPException(401, "Invalid session")
     return user
+
+@app.get("/v1/owner/me")
+def owner_me(authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    is_owner = bool(
+        (OWNER_FREEGRAM_ID and user["virtual_id"].upper() == OWNER_FREEGRAM_ID)
+        or (OWNER_FREEGRAM_USERNAME and (user.get("username") or "").lower() == OWNER_FREEGRAM_USERNAME)
+    )
+    return {"ok": True, "is_owner": is_owner, "virtual_id": user["virtual_id"],
+            "username": user.get("username") or ""}
 
 @app.get("/v1/chats")
 def list_chats(authorization: str = Header(default="")):
@@ -538,6 +670,16 @@ def toggle_reaction(chat_id: int, message_id: int, data: ReactionSet, authorizat
     return {"ok":True,"active":active,"reaction_count":count}
 
 
+@app.get("/v1/me/numbers")
+def my_virtual_numbers(authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    with connect() as c:
+        rows = c.execute("""SELECT number,created_at,assigned_by
+            FROM user_virtual_numbers WHERE user_id=%s ORDER BY id DESC""",
+            (user["id"],)).fetchall()
+    return {"ok": True, "numbers": rows}
+
+
 @app.patch("/v1/me")
 def update_me(data: ProfileUpdate, authorization: str = Header(default="")):
     user = authenticated_user(authorization)
@@ -672,12 +814,14 @@ def buy_catalog_gift(data: GiftBuy, authorization: str = Header(default="")):
     user = authenticated_user(authorization)
     now = datetime.now(timezone.utc).isoformat()
     with connect() as c:
-        gift = c.execute("""SELECT id,price,is_collectible FROM gift_types
+        gift = c.execute("""SELECT id,price,is_collectible,title FROM gift_types
             WHERE code=%s AND active=1 FOR UPDATE""", (data.gift_code.lower(),)).fetchone()
         if not gift: raise HTTPException(404, "Gift not found")
         wallet = c.execute("SELECT stars FROM users WHERE id=%s FOR UPDATE", (user["id"],)).fetchone()
         if wallet["stars"] < gift["price"]: raise HTTPException(400, "Not enough Stars")
         c.execute("UPDATE users SET stars=stars-%s WHERE id=%s", (gift["price"],user["id"]))
+        c.execute("""INSERT INTO stars_transactions(user_id,delta,reason,created_at)
+            VALUES(%s,%s,%s,%s)""", (user["id"],-gift["price"],"Покупка подарка: "+gift["title"],datetime.now(timezone.utc).isoformat()))
         serial = ("FG-NFT-" + secrets.token_hex(5).upper()) if gift["is_collectible"] else None
         row = c.execute("""INSERT INTO user_gifts
             (gift_type_id,owner_user_id,sender_user_id,created_at,serial_number)
@@ -693,9 +837,10 @@ def my_gifts(authorization: str = Header(default="")):
     with connect() as c:
         rows = c.execute("""SELECT ug.id,gt.code,gt.title,gt.description,gt.image_url,gt.rarity,
             gt.is_collectible,gt.collection_name,gt.model_url,gt.animation_url,
-            ug.upgrade_level,ug.serial_number,ug.attributes,
+            ug.upgrade_level,ug.serial_number,ug.attributes,l.id AS listing_id,
             sender.username AS sender_username,ug.created_at
             FROM user_gifts ug JOIN gift_types gt ON gt.id=ug.gift_type_id
+            LEFT JOIN gift_market_listings l ON l.gift_id=ug.id
             LEFT JOIN users sender ON sender.id=ug.sender_user_id
             WHERE ug.owner_user_id=%s ORDER BY ug.id DESC LIMIT 200""",
             (user["id"],)).fetchall()
@@ -715,7 +860,7 @@ def send_gift(data: GiftSend, authorization: str = Header(default="")):
             raise HTTPException(404, "Recipient not found")
         if recipient["id"] == user["id"]:
             raise HTTPException(400, "You cannot send a gift to yourself")
-        gift = c.execute("SELECT id,price,is_collectible FROM gift_types WHERE code=%s AND active=1",
+        gift = c.execute("SELECT id,price,is_collectible,title FROM gift_types WHERE code=%s AND active=1",
                          (data.gift_code.lower(),)).fetchone()
         if not gift:
             raise HTTPException(404, "Gift not found")
@@ -731,6 +876,9 @@ def send_gift(data: GiftSend, authorization: str = Header(default="")):
         if balance < gift["price"]:
             raise HTTPException(400, "Not enough Stars")
         c.execute("UPDATE users SET stars=stars-%s WHERE id=%s", (gift["price"], user["id"]))
+        c.execute("""INSERT INTO stars_transactions(user_id,delta,reason,counterparty_username,created_at)
+            VALUES(%s,%s,%s,%s,%s)""",
+            (user["id"],-gift["price"],"Подарок: "+gift["title"],recipient["username"],datetime.now(timezone.utc).isoformat()))
         serial = ("FG-NFT-" + secrets.token_hex(5).upper()) if gift["is_collectible"] else None
         cur = c.execute("""INSERT INTO user_gifts(gift_type_id,owner_user_id,sender_user_id,chat_id,created_at,serial_number)
             VALUES(%s,%s,%s,%s,%s,%s) RETURNING id""",
@@ -744,7 +892,7 @@ def send_gift(data: GiftSend, authorization: str = Header(default="")):
 def upgrade_owned_gift(gift_id: int, authorization: str = Header(default="")):
     user = authenticated_user(authorization)
     with connect() as c:
-        gift = c.execute("""SELECT ug.id,ug.upgrade_level,gt.is_collectible
+        gift = c.execute("""SELECT ug.id,ug.upgrade_level,gt.is_collectible,gt.title
             FROM user_gifts ug JOIN gift_types gt ON gt.id=ug.gift_type_id
             WHERE ug.id=%s AND ug.owner_user_id=%s FOR UPDATE""",
             (gift_id,user["id"])).fetchone()
@@ -759,6 +907,9 @@ def upgrade_owned_gift(gift_id: int, authorization: str = Header(default="")):
         if gift["is_collectible"] and new_level >= 1:
             serial = "FG-NFT-" + secrets.token_hex(5).upper()
         c.execute("UPDATE users SET stars=stars-%s WHERE id=%s",(cost,user["id"]))
+        c.execute("""INSERT INTO stars_transactions(user_id,delta,reason,created_at)
+            VALUES(%s,%s,%s,%s)""",
+            (user["id"],-cost,"Улучшение подарка: "+gift["title"],datetime.now(timezone.utc).isoformat()))
         c.execute("""UPDATE user_gifts SET upgrade_level=%s,
             serial_number=COALESCE(serial_number,%s),
             attributes=jsonb_build_object('level',%s,'finish',CASE WHEN %s>=4 THEN 'legendary' WHEN %s>=2 THEN 'shimmer' ELSE 'classic' END)
@@ -816,10 +967,16 @@ def buy_market_gift(listing_id: int, authorization: str = Header(default="")):
         if listing["seller_user_id"]==buyer["id"]: raise HTTPException(400,"Cannot buy your own listing")
         wallet=c.execute("SELECT stars FROM users WHERE id=%s FOR UPDATE",(buyer["id"],)).fetchone()
         if wallet["stars"] < listing["price_stars"]: raise HTTPException(400,"Not enough Stars")
-        seller=c.execute("SELECT id FROM users WHERE id=%s",(listing["seller_user_id"],)).fetchone()
+        seller=c.execute("SELECT id,username FROM users WHERE id=%s",(listing["seller_user_id"],)).fetchone()
         if not seller: raise HTTPException(404,"Seller not found")
         c.execute("UPDATE users SET stars=stars-%s WHERE id=%s",(listing["price_stars"],buyer["id"]))
         c.execute("UPDATE users SET stars=stars+%s WHERE id=%s",(listing["price_stars"],listing["seller_user_id"]))
+        c.execute("""INSERT INTO stars_transactions(user_id,delta,reason,counterparty_username,created_at)
+            VALUES(%s,%s,%s,%s,%s)""",
+            (buyer["id"],-listing["price_stars"],"Покупка подарка на маркете",seller["username"] or "",now))
+        c.execute("""INSERT INTO stars_transactions(user_id,delta,reason,counterparty_username,created_at)
+            VALUES(%s,%s,%s,%s,%s)""",
+            (seller["id"],listing["price_stars"],"Продажа подарка на маркете",buyer.get("username") or "",now))
         moved=c.execute("""UPDATE user_gifts SET owner_user_id=%s,sender_user_id=%s,chat_id=NULL
             WHERE id=%s AND owner_user_id=%s RETURNING id""",
             (buyer["id"],listing["seller_user_id"],listing["gift_id"],listing["seller_user_id"])).fetchone()
@@ -828,9 +985,20 @@ def buy_market_gift(listing_id: int, authorization: str = Header(default="")):
     return {"ok":True,"purchased":True,"gift_id":listing["gift_id"],
             "spent_stars":listing["price_stars"],"remaining_stars":wallet["stars"]-listing["price_stars"]}
 
+@app.get("/v1/stars/history")
+def stars_history(authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    with connect() as c:
+        balance = c.execute("SELECT stars FROM users WHERE id=%s", (user["id"],)).fetchone()["stars"]
+        rows = c.execute("""SELECT delta,reason,counterparty_username,created_at
+            FROM stars_transactions WHERE user_id=%s ORDER BY id DESC LIMIT 50""",
+            (user["id"],)).fetchall()
+    return {"ok": True, "balance": balance, "transactions": rows}
+
+
 @app.get("/v1/owner/status")
-def owner_status(x_owner_secret: str = Header(default="")):
-    require_owner(x_owner_secret)
+def owner_status(x_owner_secret: str = Header(default=""), authorization: str = Header(default="")):
+    require_owner(x_owner_secret, authorization)
     with connect() as c:
         total = c.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
         verified = c.execute("SELECT COUNT(*) AS n FROM users WHERE verified=1").fetchone()["n"]
@@ -838,8 +1006,8 @@ def owner_status(x_owner_secret: str = Header(default="")):
     return {"ok": True, "total_users": total, "verified_users": verified, "banned_users": banned}
 
 @app.get("/v1/owner/chats")
-def owner_chats(x_owner_secret: str = Header(default="")):
-    require_owner(x_owner_secret)
+def owner_chats(x_owner_secret: str = Header(default=""), authorization: str = Header(default="")):
+    require_owner(x_owner_secret, authorization)
     with connect() as c:
         rows = c.execute("""SELECT id,kind,title,verified,label,created_at
             FROM chats WHERE kind IN ('group','channel')
@@ -848,8 +1016,8 @@ def owner_chats(x_owner_secret: str = Header(default="")):
 
 
 @app.post("/v1/owner/chat-action")
-def owner_chat_action(data: OwnerChatAction, x_owner_secret: str = Header(default="")):
-    require_owner(x_owner_secret)
+def owner_chat_action(data: OwnerChatAction, x_owner_secret: str = Header(default=""), authorization: str = Header(default="")):
+    require_owner(x_owner_secret, authorization)
     if data.action not in ("verify", "unverify", "label"):
         raise HTTPException(400, "Action must be verify, unverify or label")
     with connect() as c:
@@ -869,23 +1037,30 @@ def owner_chat_action(data: OwnerChatAction, x_owner_secret: str = Header(defaul
 
 
 @app.get("/v1/owner/users")
-def owner_users(x_owner_secret: str = Header(default="")):
-    require_owner(x_owner_secret)
+def owner_users(x_owner_secret: str = Header(default=""), authorization: str = Header(default="")):
+    require_owner(x_owner_secret, authorization)
     with connect() as c:
-        rows = c.execute("""SELECT virtual_id, telegram_id, verified, banned,
-            stars, label, nft_username, nft_rarity, virtual_number, created_at
+        rows = c.execute("""SELECT username, virtual_id, telegram_id, verified, banned,
+            stars, premium, label, nft_username, nft_rarity, virtual_number, created_at
             FROM users ORDER BY id DESC LIMIT 200""").fetchall()
     return {"ok": True, "users": rows}
 
 @app.post("/v1/owner/action")
-def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
-    require_owner(x_owner_secret)
+def owner_action(data: OwnerAction, x_owner_secret: str = Header(default=""), authorization: str = Header(default="")):
+    require_owner(x_owner_secret, authorization)
     actions = {"ban", "unban", "verify", "unverify", "stars_add", "stars_remove", "stars_set",
-               "label", "nft_set", "nft_remove", "number_set", "number_remove", "number_generate"}
+               "label", "nft_set", "nft_remove", "number_set", "number_remove", "number_generate", "premium_on", "premium_off"}
     if data.action not in actions:
         raise HTTPException(400, "Unknown action")
     with connect() as c:
-        user = c.execute("SELECT id, stars FROM users WHERE virtual_id=%s", (data.virtual_id.upper(),)).fetchone()
+        target = (data.username or "").strip().lstrip("@").lower()
+        virtual_id = (data.virtual_id or "").strip().upper()
+        if target:
+            user = c.execute("SELECT id, stars FROM users WHERE LOWER(username)=%s", (target,)).fetchone()
+        elif virtual_id:
+            user = c.execute("SELECT id, stars FROM users WHERE UPPER(virtual_id)=%s", (virtual_id,)).fetchone()
+        else:
+            raise HTTPException(400, "username or virtual_id required")
         if not user:
             raise HTTPException(404, "User not found")
         if data.action == "ban":
@@ -906,6 +1081,10 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
                 c.execute("UPDATE users SET stars=GREATEST(0, stars - %s) WHERE id=%s", (amount, user["id"]))
             else:
                 c.execute("UPDATE users SET stars=%s WHERE id=%s", (amount, user["id"]))
+        elif data.action == "premium_on":
+            c.execute("UPDATE users SET premium=1 WHERE id=%s", (user["id"],))
+        elif data.action == "premium_off":
+            c.execute("UPDATE users SET premium=0 WHERE id=%s", (user["id"],))
         elif data.action == "label":
             label = str(data.value or "").strip()[:32]
             c.execute("UPDATE users SET label=%s WHERE id=%s", (label, user["id"]))
@@ -925,21 +1104,35 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
             number = str(data.value or "").strip()
             if not number.startswith("+888") or not number[1:].isdigit() or len(number) not in (12, 13, 14):
                 raise HTTPException(400, "Number must be a valid +888 virtual number")
-            try: c.execute("UPDATE users SET virtual_number=%s WHERE id=%s", (number, user["id"]))
-            except psycopg.errors.UniqueViolation: raise HTTPException(409, "Number already assigned")
+            try:
+                c.execute("""INSERT INTO user_virtual_numbers(user_id,number,created_at,assigned_by)
+                    VALUES(%s,%s,%s,'owner')""", (user["id"],number,datetime.now(timezone.utc).isoformat()))
+            except psycopg.errors.UniqueViolation:
+                raise HTTPException(409, "Number already assigned")
+            c.execute("UPDATE users SET virtual_number=COALESCE(virtual_number,%s) WHERE id=%s", (number,user["id"]))
         elif data.action == "number_remove":
+            c.execute("DELETE FROM user_virtual_numbers WHERE user_id=%s", (user["id"],))
             c.execute("UPDATE users SET virtual_number=NULL WHERE id=%s", (user["id"],))
         elif data.action == "number_generate":
             number = None
             for _ in range(30):
                 candidate = "+888" + "".join(str(secrets.randbelow(10)) for _ in range(8))
-                if not c.execute("SELECT 1 FROM users WHERE virtual_number=%s", (candidate,)).fetchone():
+                if not c.execute("SELECT 1 FROM user_virtual_numbers WHERE number=%s", (candidate,)).fetchone():
                     number = candidate
                     break
             if not number:
                 raise HTTPException(503, "Could not allocate a virtual number")
-            c.execute("UPDATE users SET virtual_number=%s WHERE id=%s", (number, user["id"]))
-        result = c.execute("""SELECT virtual_id, verified, banned, stars, label,
+            c.execute("""INSERT INTO user_virtual_numbers(user_id,number,created_at,assigned_by)
+                VALUES(%s,%s,%s,'owner')""", (user["id"],number,datetime.now(timezone.utc).isoformat()))
+            c.execute("UPDATE users SET virtual_number=COALESCE(virtual_number,%s) WHERE id=%s", (number,user["id"]))
+        if data.action in ("stars_add", "stars_remove", "stars_set"):
+            after_stars = c.execute("SELECT stars FROM users WHERE id=%s", (user["id"],)).fetchone()["stars"]
+            delta = after_stars - user["stars"]
+            if delta:
+                c.execute("""INSERT INTO stars_transactions(user_id,delta,reason,created_at)
+                    VALUES(%s,%s,%s,%s)""",
+                    (user["id"],delta,"Изменение баланса владельцем",datetime.now(timezone.utc).isoformat()))
+        result = c.execute("""SELECT virtual_id, verified, banned, stars, premium, label,
             nft_username, nft_rarity, virtual_number FROM users WHERE id=%s""", (user["id"],)).fetchone()
     return {"ok": True, "user": result}
 

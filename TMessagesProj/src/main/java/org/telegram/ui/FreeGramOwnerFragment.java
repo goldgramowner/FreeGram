@@ -19,14 +19,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class FreeGramOwnerFragment extends BaseFragment {
-    private final String ownerSecret;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private LinearLayout rows;
     private TextView status;
 
-    public FreeGramOwnerFragment(String secret) {
-        ownerSecret = secret;
-    }
+    public FreeGramOwnerFragment() {}
 
     @Override
     public View createView(Context context) {
@@ -73,7 +70,7 @@ public class FreeGramOwnerFragment extends BaseFragment {
     private void loadStatus() {
         executor.execute(() -> {
             try {
-                JSONObject result = FreeGramApi.requestOwner("GET", "/v1/owner/status", null, ownerSecret);
+                JSONObject result = FreeGramApi.request("GET", "/v1/owner/status", null, true);
                 android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
                     if (status != null) status.setText("Всего аккаунтов: " + result.optInt("total_users")
@@ -87,7 +84,7 @@ public class FreeGramOwnerFragment extends BaseFragment {
     private void loadUsers() {
         executor.execute(() -> {
             try {
-                JSONObject result = FreeGramApi.requestOwner("GET", "/v1/owner/users", null, ownerSecret);
+                JSONObject result = FreeGramApi.request("GET", "/v1/owner/users", null, true);
                 JSONArray users = result.optJSONArray("users");
                 android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
@@ -99,10 +96,13 @@ public class FreeGramOwnerFragment extends BaseFragment {
                         JSONObject user = users.optJSONObject(i);
                         if (user == null) continue;
                         String id = user.optString("virtual_id", "");
+                        String username = user.optString("username", "");
+                        String target = username.isEmpty() ? id : "@" + username;
                         String number = user.optString("virtual_number", "");
                         String nft = user.optString("nft_username", "");
-                        String text = id + (number.isEmpty() ? "" : " · " + number)
+                        String text = target + " · " + id + (number.isEmpty() ? "" : " · " + number)
                             + " · Stars: " + user.optLong("stars")
+                            + (user.optInt("premium") == 1 ? " · Premium" : "")
                             + (user.optInt("banned") == 1 ? " · БАН" : "")
                             + (nft.isEmpty() ? "" : " · @" + nft);
                         TextView row = new TextView(getParentActivity());
@@ -114,7 +114,7 @@ public class FreeGramOwnerFragment extends BaseFragment {
                         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
                         lp.bottomMargin = 1;
                         rows.addView(row, lp);
-                        row.setOnClickListener(v -> showUserActions(id, user.optInt("banned") == 1));
+                        row.setOnClickListener(v -> showUserActions(username.isEmpty() ? id : "@" + username, user.optInt("banned") == 1));
                     }
                 });
             } catch (Exception e) { showError(e); }
@@ -124,7 +124,7 @@ public class FreeGramOwnerFragment extends BaseFragment {
     private void loadChats() {
         executor.execute(() -> {
             try {
-                JSONObject result = FreeGramApi.requestOwner("GET", "/v1/owner/chats", null, ownerSecret);
+                JSONObject result = FreeGramApi.request("GET", "/v1/owner/chats", null, true);
                 JSONArray chats = result.optJSONArray("chats");
                 android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
@@ -158,20 +158,41 @@ public class FreeGramOwnerFragment extends BaseFragment {
             "Подтвердить аккаунт",
             "Добавить Stars",
             "Снять Stars",
-            "Выдать +888 номер",
+            "Установить баланс Stars",
+            "Сгенерировать +888 номер",
+            "Назначить +888 номер вручную",
+            "Удалить все виртуальные номера",
             "Назначить NFT username",
-            "Установить метку"
+            "Снять NFT username",
+            "Установить метку",
+            "Выдать FreeGram Premium",
+            "Снять FreeGram Premium",
+            "Снять подтверждение"
         };
         new AlertDialog.Builder(getParentActivity()).setTitle(virtualId)
             .setItems(options, (dialog, which) -> {
                 if (which == 0) performUserAction(virtualId, banned ? "unban" : "ban", null);
                 else if (which == 1) performUserAction(virtualId, "verify", null);
-                else if (which == 2 || which == 3) askValue(virtualId,
-                    which == 2 ? "stars_add" : "stars_remove", "Количество Stars", true);
-                else if (which == 4) performUserAction(virtualId, "number_generate", null);
-                else if (which == 5) askValue(virtualId, "nft_set", "NFT username без @", false);
-                else askValue(virtualId, "label", "Метка аккаунта", false);
+                else if (which == 2) askValue(virtualId, "stars_add", "Количество Stars", true);
+                else if (which == 3) askValue(virtualId, "stars_remove", "Количество Stars", true);
+                else if (which == 4) askValue(virtualId, "stars_set", "Новый баланс Stars", true);
+                else if (which == 5) performUserAction(virtualId, "number_generate", null);
+                else if (which == 6) askValue(virtualId, "number_set", "Номер в формате +888XXXXXXXX", false);
+                else if (which == 7) performUserAction(virtualId, "number_remove", null);
+                else if (which == 8) askValue(virtualId, "nft_set", "NFT username без @", false);
+                else if (which == 9) performUserAction(virtualId, "nft_remove", null);
+                else if (which == 10) chooseLabel(virtualId);
+                else if (which == 11) performUserAction(virtualId, "premium_on", null);
+                else if (which == 12) performUserAction(virtualId, "premium_off", null);
+                else performUserAction(virtualId, "unverify", null);
             }).show();
+    }
+
+    private void chooseLabel(String target) {
+        String[] labels = {"owner", "admin", "moder", "media", "scam", "Снять метку"};
+        new AlertDialog.Builder(getParentActivity()).setTitle("Метка аккаунта")
+            .setItems(labels, (dialog, which) -> performUserAction(target, "label",
+                which == labels.length - 1 ? "" : labels[which])).show();
     }
 
     private void askValue(String virtualId, String action, String hint, boolean numeric) {
@@ -185,14 +206,15 @@ public class FreeGramOwnerFragment extends BaseFragment {
             .show();
     }
 
-    private void performUserAction(String virtualId, String action, String value) {
+    private void performUserAction(String target, String action, String value) {
         executor.execute(() -> {
             try {
                 JSONObject body = new JSONObject();
-                body.put("virtual_id", virtualId);
+                if (target.startsWith("@")) body.put("username", target.substring(1));
+                else body.put("virtual_id", target);
                 body.put("action", action);
                 if (value != null) body.put("value", value);
-                FreeGramApi.requestOwner("POST", "/v1/owner/action", body, ownerSecret);
+                FreeGramApi.request("POST", "/v1/owner/action", body, true);
                 android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(() -> {
                     if (status != null) status.setText("Изменение выполнено: " + action);
@@ -223,7 +245,7 @@ public class FreeGramOwnerFragment extends BaseFragment {
                 body.put("chat_id", chatId);
                 body.put("action", action);
                 if (value != null) body.put("value", value);
-                FreeGramApi.requestOwner("POST", "/v1/owner/chat-action", body, ownerSecret);
+                FreeGramApi.request("POST", "/v1/owner/chat-action", body, true);
                 android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
                 main.post(this::loadChats);
             } catch (Exception e) { showError(e); }

@@ -59,7 +59,39 @@ public final class FreeGramApi {
         return androidId;
     }
 
-    public static JSONObject requestOwner(String method, String path, JSONObject body, String ownerSecret) throws Exception {\n        return requestInternal(method, path, body, false, ownerSecret);\n    }\n\n    public static JSONObject request(String method, String path, JSONObject body, boolean authenticated) throws Exception {\n        return requestInternal(method, path, body, authenticated, null);\n    }\n\n    private static JSONObject requestInternal(String method, String path, JSONObject body, boolean authenticated, String ownerSecret) throws Exception {
+
+    public static boolean ensureDeviceSession() {
+        try {
+            if (hasSession()) {
+                try {
+                    request("GET", "/v1/me", null, true);
+                    return true;
+                } catch (Exception invalidSession) {
+                    clearToken();
+                }
+            }
+            JSONObject body = new JSONObject();
+            body.put("device_id", deviceId());
+            JSONObject result = request("POST", "/v1/auth/device", body, false);
+            String accessToken = result.optString("access_token", "");
+            if (accessToken.isEmpty()) return false;
+            saveToken(accessToken);
+            request("GET", "/v1/me", null, true);
+            return true;
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
+    public static JSONObject requestOwner(String method, String path, JSONObject body, String ownerSecret) throws Exception {
+        return requestInternal(method, path, body, false, ownerSecret);
+    }
+
+    public static JSONObject request(String method, String path, JSONObject body, boolean authenticated) throws Exception {
+        return requestInternal(method, path, body, authenticated, null);
+    }
+
+    private static JSONObject requestInternal(String method, String path, JSONObject body, boolean authenticated, String ownerSecret) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(BASE + path).openConnection();
         connection.setRequestMethod(method);
         connection.setConnectTimeout(15000);
@@ -71,7 +103,8 @@ public final class FreeGramApi {
             byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
             try (OutputStream out = connection.getOutputStream()) { out.write(bytes); }
         }
-        if (authenticated) connection.setRequestProperty("Authorization", "Bearer " + token());\n        if (ownerSecret != null) connection.setRequestProperty("X-Owner-Secret", ownerSecret);
+        if (authenticated) connection.setRequestProperty("Authorization", "Bearer " + token());
+        if (ownerSecret != null) connection.setRequestProperty("X-Owner-Secret", ownerSecret);
         int code = connection.getResponseCode();
         InputStream stream = code >= 200 && code < 400 ? connection.getInputStream() : connection.getErrorStream();
         StringBuilder result = new StringBuilder();

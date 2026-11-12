@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 BOT_SECRET = os.getenv("BOT_API_SECRET", "")
 OWNER_SECRET = os.getenv("OWNER_API_SECRET", "")
+OWNER_FREEGRAM_ID = os.getenv("OWNER_FREEGRAM_ID", "").strip().upper()
 
 def connect():
     if not DATABASE_URL:
@@ -145,9 +146,18 @@ def require_bot(secret):
     if not BOT_SECRET or secret != BOT_SECRET:
         raise HTTPException(403, "Bot access denied")
 
-def require_owner(secret):
-    if not OWNER_SECRET or secret != OWNER_SECRET:
-        raise HTTPException(403, "Owner access denied")
+def require_owner(secret, authorization=""):
+    if OWNER_SECRET and secrets.compare_digest(secret or "", OWNER_SECRET):
+        return True
+    if authorization.startswith("Bearer ") and OWNER_FREEGRAM_ID:
+        with connect() as c:
+            owner = c.execute(
+                "SELECT id FROM users WHERE token_hash=%s AND UPPER(virtual_id)=%s AND verified=1 AND banned=0",
+                (digest(authorization[7:]), OWNER_FREEGRAM_ID)
+            ).fetchone()
+        if owner:
+            return True
+    raise HTTPException(403, "Owner access denied")
 
 class Registration(BaseModel):
     telegram_id: int
@@ -402,6 +412,12 @@ def authenticated_user(authorization):
     if not user or not user["verified"] or user["banned"]:
         raise HTTPException(401, "Invalid session")
     return user
+
+@app.get("/v1/owner/me")
+def owner_me(authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    is_owner = bool(OWNER_FREEGRAM_ID and user["virtual_id"].upper() == OWNER_FREEGRAM_ID)
+    return {"ok": True, "is_owner": is_owner, "virtual_id": user["virtual_id"]}
 
 @app.get("/v1/chats")
 def list_chats(authorization: str = Header(default="")):
@@ -829,8 +845,8 @@ def buy_market_gift(listing_id: int, authorization: str = Header(default="")):
             "spent_stars":listing["price_stars"],"remaining_stars":wallet["stars"]-listing["price_stars"]}
 
 @app.get("/v1/owner/status")
-def owner_status(x_owner_secret: str = Header(default="")):
-    require_owner(x_owner_secret)
+def owner_status(x_owner_secret: str = Header(default=""), authorization: str = Header(default="")):
+    require_owner(x_owner_secret, authorization)
     with connect() as c:
         total = c.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
         verified = c.execute("SELECT COUNT(*) AS n FROM users WHERE verified=1").fetchone()["n"]
@@ -838,8 +854,8 @@ def owner_status(x_owner_secret: str = Header(default="")):
     return {"ok": True, "total_users": total, "verified_users": verified, "banned_users": banned}
 
 @app.get("/v1/owner/chats")
-def owner_chats(x_owner_secret: str = Header(default="")):
-    require_owner(x_owner_secret)
+def owner_chats(x_owner_secret: str = Header(default=""), authorization: str = Header(default="")):
+    require_owner(x_owner_secret, authorization)
     with connect() as c:
         rows = c.execute("""SELECT id,kind,title,verified,label,created_at
             FROM chats WHERE kind IN ('group','channel')
@@ -848,8 +864,8 @@ def owner_chats(x_owner_secret: str = Header(default="")):
 
 
 @app.post("/v1/owner/chat-action")
-def owner_chat_action(data: OwnerChatAction, x_owner_secret: str = Header(default="")):
-    require_owner(x_owner_secret)
+def owner_chat_action(data: OwnerChatAction, x_owner_secret: str = Header(default=""), authorization: str = Header(default="")):
+    require_owner(x_owner_secret, authorization)
     if data.action not in ("verify", "unverify", "label"):
         raise HTTPException(400, "Action must be verify, unverify or label")
     with connect() as c:
@@ -869,8 +885,8 @@ def owner_chat_action(data: OwnerChatAction, x_owner_secret: str = Header(defaul
 
 
 @app.get("/v1/owner/users")
-def owner_users(x_owner_secret: str = Header(default="")):
-    require_owner(x_owner_secret)
+def owner_users(x_owner_secret: str = Header(default=""), authorization: str = Header(default="")):
+    require_owner(x_owner_secret, authorization)
     with connect() as c:
         rows = c.execute("""SELECT virtual_id, telegram_id, verified, banned,
             stars, label, nft_username, nft_rarity, virtual_number, created_at
@@ -878,8 +894,8 @@ def owner_users(x_owner_secret: str = Header(default="")):
     return {"ok": True, "users": rows}
 
 @app.post("/v1/owner/action")
-def owner_action(data: OwnerAction, x_owner_secret: str = Header(default="")):
-    require_owner(x_owner_secret)
+def owner_action(data: OwnerAction, x_owner_secret: str = Header(default=""), authorization: str = Header(default="")):
+    require_owner(x_owner_secret, authorization)
     actions = {"ban", "unban", "verify", "unverify", "stars_add", "stars_remove", "stars_set",
                "label", "nft_set", "nft_remove", "number_set", "number_remove", "number_generate"}
     if data.action not in actions:

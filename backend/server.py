@@ -837,9 +837,10 @@ def my_gifts(authorization: str = Header(default="")):
     with connect() as c:
         rows = c.execute("""SELECT ug.id,gt.code,gt.title,gt.description,gt.image_url,gt.rarity,
             gt.is_collectible,gt.collection_name,gt.model_url,gt.animation_url,
-            ug.upgrade_level,ug.serial_number,ug.attributes,
+            ug.upgrade_level,ug.serial_number,ug.attributes,l.id AS listing_id,
             sender.username AS sender_username,ug.created_at
             FROM user_gifts ug JOIN gift_types gt ON gt.id=ug.gift_type_id
+            LEFT JOIN gift_market_listings l ON l.gift_id=ug.id
             LEFT JOIN users sender ON sender.id=ug.sender_user_id
             WHERE ug.owner_user_id=%s ORDER BY ug.id DESC LIMIT 200""",
             (user["id"],)).fetchall()

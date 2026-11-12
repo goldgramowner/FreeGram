@@ -10,6 +10,7 @@ on:
       - freegram/mega-combined-build
       - freegram/device-auto-account
       - freegram/build-143-owner-panel
+      - freegram/build-143-owner-id
 
 concurrency:
   group: freegram-apk-${{ github.ref }}

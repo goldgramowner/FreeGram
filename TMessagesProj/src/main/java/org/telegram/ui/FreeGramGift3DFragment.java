@@ -2,6 +2,7 @@ package org.telegram.ui;
 
 import android.content.Context;
 import android.graphics.Color;
+import android.view.View;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;

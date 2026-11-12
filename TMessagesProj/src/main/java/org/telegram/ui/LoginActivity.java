@@ -1534,7 +1534,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             animated = false;
             params = null;
             if (getParentActivity() != null) {
-                android.widget.Toast.makeText(getParentActivity(), "Регистрация в FreeGram отключена. Войдите в существующий аккаунт.", android.widget.Toast.LENGTH_LONG).show();
+                android.widget.Toast.makeText(getParentActivity(), getString(R.string.FreeGramRegistrationDisabled), android.widget.Toast.LENGTH_LONG).show();
             }
         }
         boolean needFloatingButton = page == VIEW_PHONE_INPUT || page == VIEW_REGISTER || page == VIEW_PASSWORD ||

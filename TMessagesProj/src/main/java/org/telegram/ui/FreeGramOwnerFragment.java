@@ -167,7 +167,7 @@ public class FreeGramOwnerFragment extends BaseFragment {
                 if (which == 0) performUserAction(virtualId, banned ? "unban" : "ban", null);
                 else if (which == 1) performUserAction(virtualId, "verify", null);
                 else if (which == 2 || which == 3) askValue(virtualId,
-                    which == 2 ? "stars_add" : "stars_remove", "Количество Stars", false);
+                    which == 2 ? "stars_add" : "stars_remove", "Количество Stars", true);
                 else if (which == 4) performUserAction(virtualId, "number_generate", null);
                 else if (which == 5) askValue(virtualId, "nft_set", "NFT username без @", false);
                 else askValue(virtualId, "label", "Метка аккаунта", false);

@@ -13470,6 +13470,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         io.add(R.drawable.outline_groups_24, "Создать группу или канал", () -> {
             showFreeGramCreateChatDialog();
         });
+        io.add(R.drawable.gift, "Подарки и маркет", () -> {
+            presentFragment(new FreeGramGift3DFragment(), true);
+        });
         io.add(R.drawable.outline_saved_24, getString(R.string.SavedMessages), () -> {
             Bundle args = new Bundle();
             args.putLong("user_id", UserConfig.getInstance(currentAccount).getClientUserId());

@@ -1,4 +1,4 @@
-name: FreeGram APK
+name: FreeGram Combined APK
 
 on:
   workflow_dispatch:

@@ -363,14 +363,13 @@ public class FreeGramHomeFragment extends BaseFragment {
                     form.addView(copyId);
                     String number = me.optString("virtual_number", "");
                     String nft = me.optString("nft_username", "");
-                    String rarity = me.optString("nft_rarity", "common");
                     String label = me.optString("label", "");
                     String badge = me.optInt("verified", 0) == 1 ? "✓ Проверен" : "Не подтверждён";
                     TextView details = new TextView(getParentActivity());
                     details.setText("Номер: " + (number.isEmpty() ? "не назначен" : number)
                         + "\n" + badge
                         + (label.isEmpty() ? "" : "\nМетка: " + label)
-                        + (nft.isEmpty() ? "" : "\nNFT username: @" + nft + " · " + rarity)
+                        + (nft.isEmpty() ? "" : "\nNFT username: @" + nft)
                         + "\nStars: " + me.optLong("stars", 0));
                     details.setTextColor(Color.DKGRAY);
                     details.setPadding(0, 0, 0, 12);

@@ -848,10 +848,17 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             dialogsActivity.setMainTabsActivityController(new MainTabsActivityControllerImpl());
             return dialogsActivity;
         } else if (position == POSITION_PROFILE) {
+            long clientUserId = UserConfig.getInstance(currentAccount).getClientUserId();
+            if (clientUserId <= 0 || !UserConfig.getInstance(currentAccount).isClientActivated()) {
+                // FreeGram device sessions do not create a Telegram MTProto user.
+                // Never open ProfileActivity with user_id=0: Telegram treats it as a deleted account.
+                Bundle args = new Bundle();
+                args.putBoolean("hasMainTabs", true);
+                return new SettingsActivity(args);
+            }
             Bundle args = new Bundle();
-            args.putLong("user_id", UserConfig.getInstance(currentAccount).getClientUserId());
+            args.putLong("user_id", clientUserId);
             args.putBoolean("my_profile", true);
-            // args.putBoolean("expandPhoto", true);
             args.putBoolean("hasMainTabs", true);
             return new ProfileActivity(args);
         }

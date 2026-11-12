@@ -59,6 +59,30 @@ public final class FreeGramApi {
         return androidId;
     }
 
+
+    public static boolean ensureDeviceSession() {
+        try {
+            if (hasSession()) {
+                try {
+                    request("GET", "/v1/me", null, true);
+                    return true;
+                } catch (Exception invalidSession) {
+                    clearToken();
+                }
+            }
+            JSONObject body = new JSONObject();
+            body.put("device_id", deviceId());
+            JSONObject result = request("POST", "/v1/auth/device", body, false);
+            String accessToken = result.optString("access_token", "");
+            if (accessToken.isEmpty()) return false;
+            saveToken(accessToken);
+            request("GET", "/v1/me", null, true);
+            return true;
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
     public static JSONObject requestOwner(String method, String path, JSONObject body, String ownerSecret) throws Exception {
         return requestInternal(method, path, body, false, ownerSecret);
     }

@@ -437,32 +437,59 @@ def register_device(data: DeviceRegistration):
 
 @app.post("/v1/registrations")
 def register(data: Registration, x_bot_secret: str = Header(default="")):
+    """Create/reissue a FreeGram REST login code and allocate a profile virtual number.
+
+    The number is an internal FreeGram identifier; it is not a SIM, SMS inbox,
+    or Telegram MTProto phone number.
+    """
     require_bot(x_bot_secret)
     now = datetime.now(timezone.utc)
     code = "".join(str(secrets.randbelow(10)) for _ in range(6))
     salt = secrets.token_hex(16)
     expires = (now + timedelta(minutes=10)).isoformat()
     with connect() as c:
-        existing = c.execute(
-            "SELECT id, virtual_id, banned FROM users WHERE telegram_id=%s",
+        user = c.execute(
+            "SELECT id, virtual_id, banned, virtual_number FROM users WHERE telegram_id=%s",
             (data.telegram_id,)
         ).fetchone()
-        if existing:
-            if existing["banned"]:
-                raise HTTPException(403, "Account banned")
-            virtual_id = existing["virtual_id"]
+        if user and user["banned"]:
+            raise HTTPException(403, "Account banned")
+        if user:
+            virtual_id = user["virtual_id"]
+            user_id = user["id"]
+            virtual_number = user["virtual_number"]
             c.execute("""UPDATE users SET otp_salt=%s, otp_hash=%s, otp_expires=%s
                 WHERE id=%s""",
-                (salt, digest(salt + code), expires, existing["id"]))
+                (salt, digest(salt + code), expires, user_id))
         else:
             virtual_id = "FG-" + secrets.token_hex(5).upper()
-            c.execute("""INSERT INTO users
+            row = c.execute("""INSERT INTO users
                 (telegram_id, virtual_id, otp_salt, otp_hash, otp_expires,
                  verified, token_hash, created_at)
-                VALUES (%s,%s,%s,%s,%s,0,NULL,%s)""",
+                VALUES (%s,%s,%s,%s,%s,0,NULL,%s) RETURNING id""",
                 (data.telegram_id, virtual_id, salt, digest(salt + code),
-                 expires, now.isoformat()))
-    return {"ok": True, "virtual_id": virtual_id, "code": code, "expires_in": 600}
+                 expires, now.isoformat())).fetchone()
+            user_id = row["id"]
+            virtual_number = None
+
+        if not virtual_number:
+            for _ in range(40):
+                candidate = "+888" + "".join(str(secrets.randbelow(10)) for _ in range(8))
+                try:
+                    c.execute("""INSERT INTO user_virtual_numbers
+                        (user_id, number, created_at, assigned_by)
+                        VALUES (%s,%s,%s,'registration')""",
+                        (user_id, candidate, now.isoformat()))
+                    virtual_number = candidate
+                    break
+                except psycopg.errors.UniqueViolation:
+                    continue
+            if not virtual_number:
+                raise HTTPException(503, "Could not allocate FreeGram virtual number")
+            c.execute("UPDATE users SET virtual_number=%s WHERE id=%s",
+                      (virtual_number, user_id))
+    return {"ok": True, "virtual_id": virtual_id,
+            "virtual_number": virtual_number, "code": code, "expires_in": 600}
 
 
 @app.post("/v1/auth/code")

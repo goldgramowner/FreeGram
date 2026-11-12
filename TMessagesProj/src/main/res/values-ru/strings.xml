@@ -2,6 +2,7 @@
 <resources>
     <string name="AppName">FreeGram</string>
     <string name="AppNameBeta">FreeGram Beta</string>
+    <string name="FreeGramOwnerPanel">Панель владельца FreeGram</string>
     <string name="LanguageName">Русский</string>
     <string name="English">Английский</string>
     <string name="LanguageNameInEnglish">Russian</string>

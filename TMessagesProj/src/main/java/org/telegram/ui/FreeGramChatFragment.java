@@ -4,17 +4,14 @@ import android.content.Context;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
-import android.app.AlertDialog;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.os.Handler;
-import android.os.Looper;
+import android.app.AlertDialog;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -27,39 +24,22 @@ public class FreeGramChatFragment extends BaseFragment {
     private final long chatId;
     private final String chatTitle;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private LinearLayout messages;
-    private ScrollView messageScroll;
     private EditText composer;
     private TextView status;
-    private volatile boolean loadingMessages = false;
-    private long lastMessageId = 0;
-    private long replyToId = 0;
-    private String replyToText = "";
-
-    private final Runnable pollMessages = new Runnable() {
-        @Override
-        public void run() {
-            if (messages == null) return;
-            loadMessages(false);
-            mainHandler.postDelayed(this, 4000);
+    private final android.os.Handler pollHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable pollRunnable = new Runnable() {
+        @Override public void run() {
+            if (messages != null) {
+                loadMessages();
+                pollHandler.postDelayed(this, 5000);
+            }
         }
     };
 
     public FreeGramChatFragment(long id, String title) {
         chatId = id;
         chatTitle = title == null || title.isEmpty() ? "Чат" : title;
-    }
-
-    private int dp(Context context, int value) {
-        return (int) (value * context.getResources().getDisplayMetrics().density + 0.5f);
-    }
-
-    private GradientDrawable bubbleBackground(Context context) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(Color.WHITE);
-        drawable.setCornerRadius(dp(context, 16));
-        return drawable;
     }
 
     @Override
@@ -71,200 +51,89 @@ public class FreeGramChatFragment extends BaseFragment {
 
         LinearLayout header = new LinearLayout(context);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(context, 12), dp(context, 8), dp(context, 12), dp(context, 8));
+        header.setPadding(16, 10, 16, 10);
         TextView title = new TextView(context);
         title.setText(chatTitle);
         title.setTextColor(Color.rgb(25, 35, 48));
         title.setTextSize(19);
-        title.setSingleLine(true);
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        Button details = new Button(context);
-        details.setText("Профиль");
-        header.addView(details);
-        details.setOnClickListener(v -> showChatProfile());
+        Button info = new Button(context);
+        info.setText("ⓘ");
+        header.addView(info);
+        Button gift = new Button(context);
+        gift.setText("🎁");
+        header.addView(gift);
         Button invite = new Button(context);
         invite.setText("Ссылка");
         header.addView(invite);
         Button refresh = new Button(context);
         refresh.setText("↻");
         header.addView(refresh);
+        info.setOnClickListener(v -> showChatProfile());
+        gift.setOnClickListener(v -> showChatGifts());
         invite.setOnClickListener(v -> createInvite());
-        refresh.setOnClickListener(v -> loadMessages(true));
         root.addView(header);
 
         status = new TextView(context);
-        status.setTextColor(Color.rgb(95, 110, 128));
-        status.setTextSize(12);
-        status.setPadding(dp(context, 14), dp(context, 4), dp(context, 14), dp(context, 4));
+        status.setTextColor(Color.DKGRAY);
+        status.setPadding(14, 4, 14, 4);
         root.addView(status);
 
-        messageScroll = new ScrollView(context);
-        messageScroll.setFillViewport(true);
+        ScrollView scroll = new ScrollView(context);
         messages = new LinearLayout(context);
         messages.setOrientation(LinearLayout.VERTICAL);
-        messages.setPadding(dp(context, 10), dp(context, 8), dp(context, 10), dp(context, 8));
-        messageScroll.addView(messages, new ScrollView.LayoutParams(-1, -2));
-        root.addView(messageScroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        messages.setPadding(10, 8, 10, 8);
+        scroll.addView(messages);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         LinearLayout sendBar = new LinearLayout(context);
         sendBar.setGravity(Gravity.CENTER_VERTICAL);
-        sendBar.setPadding(dp(context, 8), dp(context, 6), dp(context, 8), dp(context, 6));
-        sendBar.setBackgroundColor(Color.WHITE);
+        sendBar.setPadding(8, 6, 8, 6);
         composer = new EditText(context);
         composer.setSingleLine(true);
-        composer.setTextSize(16);
         composer.setHint("Сообщение");
         sendBar.addView(composer, new LinearLayout.LayoutParams(0, -2, 1));
         Button send = new Button(context);
-        send.setText("➤");
-        send.setAllCaps(false);
+        send.setText("Отправить");
         sendBar.addView(send);
         root.addView(sendBar);
 
+        refresh.setOnClickListener(v -> loadMessages());
         send.setOnClickListener(v -> sendMessage());
-        composer.setOnEditorActionListener((v, actionId, event) -> {
-            sendMessage();
-            return true;
-        });
         fragmentView = root;
-        loadMessages(true);
-        mainHandler.postDelayed(pollMessages, 4000);
+        loadMessages();
+        pollHandler.postDelayed(pollRunnable, 5000);
         return fragmentView;
     }
 
-    private void loadMessages(boolean reset) {
-        if (loadingMessages || messages == null) return;
-        loadingMessages = true;
-        final long after = reset ? 0 : lastMessageId;
-        if (reset) {
-            lastMessageId = 0;
-            messages.removeAllViews();
-        }
+    private void loadMessages() {
         executor.execute(() -> {
             try {
-                JSONObject result = FreeGramApi.request("GET",
-                        "/v1/chats/" + chatId + "/messages?after_id=" + after, null, true);
+                JSONObject result = FreeGramApi.request("GET", "/v1/chats/" + chatId + "/messages", null, true);
                 JSONArray rows = result.optJSONArray("messages");
-                mainHandler.post(() -> {
-                    loadingMessages = false;
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> {
                     if (messages == null) return;
+                    messages.removeAllViews();
                     int count = rows == null ? 0 : rows.length();
-                    if (after == 0) {
-                        status.setText(count == 0 ? "Повідомлень поки немає" : "FreeGram · " + count + " повідомлень");
-                    } else if (count > 0) {
-                        status.setText("Нові повідомлення: " + count);
-                    }
+                    status.setText(count == 0 ? "Сообщений пока нет" : "Сообщений: " + count);
                     for (int i = 0; i < count; i++) {
                         JSONObject item = rows.optJSONObject(i);
                         if (item == null) continue;
-                        long id = item.optLong("id", 0);
-                        if (id > lastMessageId) lastMessageId = id;
                         TextView bubble = new TextView(getParentActivity());
-                        String username = item.optString("username", "Користувач");
-                        String body = item.optString("body", "");
-                        String replyBody = item.optString("reply_body", "");
-                        String edited = item.optString("edited_at", "");
-                        int reactionCount = item.optInt("reaction_count", 0);
-                        StringBuilder bubbleText = new StringBuilder(username);
-                        if (!replyBody.isEmpty()) bubbleText.append("\\n↳ ").append(item.optString("reply_username", "")).append(": ").append(replyBody);
-                        bubbleText.append("\\n").append(body);
-                        if (!edited.isEmpty()) bubbleText.append("  · изменено");
-                        if (reactionCount > 0) bubbleText.append("\\n👍 ").append(reactionCount);
-                        bubble.setText(bubbleText.toString());
-                        bubble.setOnLongClickListener(v -> { showMessageActions(item); return true; });
+                        bubble.setText(item.optString("username", "Пользователь") + "\n" + item.optString("body", ""));
                         bubble.setTextColor(Color.rgb(30, 38, 48));
                         bubble.setTextSize(15);
-                        bubble.setPadding(dp(getParentActivity(), 14), dp(getParentActivity(), 10),
-                                dp(getParentActivity(), 14), dp(getParentActivity(), 10));
-                        bubble.setBackground(bubbleBackground(getParentActivity()));
+                        bubble.setPadding(14, 10, 14, 10);
+                        bubble.setBackgroundColor(Color.WHITE);
                         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-                        lp.bottomMargin = dp(getParentActivity(), 6);
+                        lp.bottomMargin = 6;
                         messages.addView(bubble, lp);
                     }
-                    if (count > 0 && messageScroll != null) {
-                        messageScroll.post(() -> messageScroll.fullScroll(View.FOCUS_DOWN));
-                    }
                 });
             } catch (Exception e) {
-                mainHandler.post(() -> {
-                    loadingMessages = false;
-                    if (status != null) status.setText("Помилка з'єднання: " +
-                            (e.getMessage() == null ? "FreeGram API" : e.getMessage()));
-                });
-            }
-        });
-    }
-
-    private void showMessageActions(JSONObject item) {
-        if (getParentActivity() == null) return;
-        long id = item.optLong("id", 0);
-        boolean mine = item.optInt("is_mine", 0) == 1;
-        String[] actions = mine
-                ? new String[]{"Ответить", "👍 Реакция", "Изменить", "Удалить"}
-                : new String[]{"Ответить", "👍 Реакция"};
-        new AlertDialog.Builder(getParentActivity())
-                .setItems(actions, (dialog, which) -> {
-                    if (which == 0) {
-                        replyToId = id;
-                        replyToText = item.optString("body", "");
-                        if (composer != null) {
-                            composer.setHint("Ответ: " + replyToText);
-                            composer.requestFocus();
-                        }
-                        if (status != null) status.setText("Ответ на сообщение #" + id + " · нажмите отправить");
-                    } else if (which == 1) {
-                        toggleReaction(id, "👍");
-                    } else if (which == 2) {
-                        editMessage(item);
-                    } else if (which == 3) {
-                        new AlertDialog.Builder(getParentActivity())
-                                .setMessage("Удалить это сообщение?")
-                                .setNegativeButton("Отмена", null)
-                                .setPositiveButton("Удалить", (d, w) -> deleteMessage(id))
-                                .show();
-                    }
-                }).show();
-    }
-
-    private void editMessage(JSONObject item) {
-        EditText input = new EditText(getParentActivity());
-        input.setText(item.optString("body", ""));
-        new AlertDialog.Builder(getParentActivity())
-                .setTitle("Изменить сообщение")
-                .setView(input)
-                .setNegativeButton("Отмена", null)
-                .setPositiveButton("Сохранить", (dialog, which) -> executor.execute(() -> {
-                    try {
-                        JSONObject body = new JSONObject();
-                        body.put("text", input.getText().toString().trim());
-                        FreeGramApi.request("PATCH", "/v1/chats/" + chatId + "/messages/" + item.optLong("id"), body, true);
-                        mainHandler.post(() -> loadMessages(true));
-                    } catch (Exception e) {
-                        mainHandler.post(() -> { if (status != null) status.setText("Не удалось изменить: " + e.getMessage()); });
-                    }
-                })).show();
-    }
-
-    private void deleteMessage(long messageId) {
-        executor.execute(() -> {
-            try {
-                FreeGramApi.request("DELETE", "/v1/chats/" + chatId + "/messages/" + messageId, null, true);
-                mainHandler.post(() -> loadMessages(true));
-            } catch (Exception e) {
-                mainHandler.post(() -> { if (status != null) status.setText("Не удалось удалить: " + e.getMessage()); });
-            }
-        });
-    }
-
-    private void toggleReaction(long messageId, String reaction) {
-        executor.execute(() -> {
-            try {
-                JSONObject body = new JSONObject();
-                body.put("reaction", reaction);
-                FreeGramApi.request("POST", "/v1/chats/" + chatId + "/messages/" + messageId + "/reactions", body, true);
-                mainHandler.post(() -> loadMessages(true));
-            } catch (Exception e) {
-                mainHandler.post(() -> { if (status != null) status.setText("Реакция не отправлена: " + e.getMessage()); });
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> { if (status != null) status.setText("Ошибка: " + e.getMessage()); });
             }
         });
     }
@@ -275,69 +144,187 @@ public class FreeGramChatFragment extends BaseFragment {
                 JSONObject result = FreeGramApi.request("GET", "/v1/chats/" + chatId, null, true);
                 JSONObject chat = result.optJSONObject("chat");
                 JSONArray members = result.optJSONArray("members");
-                mainHandler.post(() -> {
-                    if (getParentActivity() == null || chat == null) return;
-                    LinearLayout content = new LinearLayout(getParentActivity());
-                    content.setOrientation(LinearLayout.VERTICAL);
-                    content.setPadding(dp(getParentActivity(), 20), dp(getParentActivity(), 8), dp(getParentActivity(), 20), dp(getParentActivity(), 8));
-                    EditText title = new EditText(getParentActivity());
-                    title.setSingleLine(true); title.setHint("Название"); title.setText(chat.optString("title", ""));
-                    EditText description = new EditText(getParentActivity());
-                    description.setHint("Описание"); description.setText(chat.optString("description", ""));
-                    EditText cover = new EditText(getParentActivity());
-                    cover.setSingleLine(true); cover.setHint("Ссылка на обложку"); cover.setText(chat.optString("cover_url", ""));
-                    content.addView(title); content.addView(description); content.addView(cover);
-                    StringBuilder people = new StringBuilder("Участники: ");
-                    people.append(members == null ? 0 : members.length());
-                    if (members != null) for (int i = 0; i < members.length(); i++) {
-                        JSONObject member = members.optJSONObject(i); if (member == null) continue;
-                        String username = member.optString("username", "user");
-                        String display = member.optString("display_name", "");
-                        people.append("\n").append(display.isEmpty() ? username : display + "  @" + username);
-                        String label = member.optString("label", "");
-                        if (member.optBoolean("verified", false)) { people.append("  ✓"); if (!label.isEmpty()) people.append(" ").append(label); }
+                boolean isOwner = result.optBoolean("is_owner", false);
+                StringBuilder info = new StringBuilder(chatTitle);
+                if (chat != null) {
+                    String description = chat.optString("description", "");
+                    if (!description.isEmpty()) info.append("\n\n").append(description);
+                    info.append("\n\nТип: ").append(chat.optString("kind", "group"));
+                    String cover = chat.optString("cover_url", "");
+                    if (!cover.isEmpty()) info.append("\nОбложка: задана");
+                }
+                info.append("\nУчастников: ").append(members == null ? 0 : members.length());
+                if (members != null) {
+                    for (int i = 0; i < members.length(); i++) {
+                        JSONObject member = members.optJSONObject(i);
+                        if (member != null) info.append("\n@").append(member.optString("username", "user"));
                     }
-                    TextView memberList = new TextView(getParentActivity());
-                    memberList.setText(people.toString()); memberList.setTextColor(Color.rgb(75, 88, 105)); memberList.setTextSize(13);
-                    memberList.setPadding(0, dp(getParentActivity(), 12), 0, 0); content.addView(memberList);
-                    new AlertDialog.Builder(getParentActivity()).setTitle("Профиль чата").setView(content)
-                        .setNegativeButton("Закрыть", null).setPositiveButton("Сохранить", (dialog, which) -> executor.execute(() -> {
-                            try {
-                                JSONObject update = new JSONObject();
-                                update.put("title", title.getText().toString().trim());
-                                update.put("description", description.getText().toString().trim());
-                                update.put("cover_url", cover.getText().toString().trim());
-                                FreeGramApi.request("PATCH", "/v1/chats/" + chatId, update, true);
-                                mainHandler.post(() -> { if (status != null) status.setText("Профиль чата сохранён"); });
-                            } catch (Exception e) { mainHandler.post(() -> { if (status != null) status.setText("Не удалось сохранить: " + e.getMessage()); }); }
-                        })).show();
+                }
+                String text = info.toString();
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> {
+                    if (getParentActivity() == null) return;
+                    if (!isOwner) {
+                        new AlertDialog.Builder(getParentActivity()).setTitle("Профиль чата")
+                            .setMessage(text).setPositiveButton("Закрыть", null).show();
+                        return;
+                    }
+                    new AlertDialog.Builder(getParentActivity()).setTitle("Профиль чата")
+                        .setMessage(text)
+                        .setItems(new String[]{"Изменить название и обложку", "Добавить участника", "Закрыть"},
+                            (dialog, which) -> {
+                                if (which == 0) editChatProfile(chat);
+                                else if (which == 1) addChatMember();
+                            }).show();
                 });
-            } catch (Exception e) { mainHandler.post(() -> { if (status != null) status.setText("Не удалось открыть профиль чата: " + e.getMessage()); }); }
+            } catch (Exception e) {
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> { if (status != null) status.setText("Не удалось открыть профиль: " + e.getMessage()); });
+            }
         });
     }
+
+    private void editChatProfile(JSONObject chat) {
+        if (getParentActivity() == null || chat == null) return;
+        LinearLayout form = new LinearLayout(getParentActivity());
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(20, 8, 20, 4);
+        EditText title = new EditText(getParentActivity());
+        title.setSingleLine(true);
+        title.setHint("Название");
+        title.setText(chat.optString("title", chatTitle));
+        EditText description = new EditText(getParentActivity());
+        description.setHint("Описание");
+        description.setText(chat.optString("description", ""));
+        EditText cover = new EditText(getParentActivity());
+        cover.setSingleLine(true);
+        cover.setHint("URL обложки");
+        cover.setText(chat.optString("cover_url", ""));
+        form.addView(title);
+        form.addView(description);
+        form.addView(cover);
+        new AlertDialog.Builder(getParentActivity()).setTitle("Редактировать чат")
+            .setView(form).setNegativeButton("Отмена", null)
+            .setPositiveButton("Сохранить", (d, w) -> executor.execute(() -> {
+                try {
+                    JSONObject body = new JSONObject();
+                    body.put("title", title.getText().toString().trim());
+                    body.put("description", description.getText().toString().trim());
+                    body.put("cover_url", cover.getText().toString().trim());
+                    FreeGramApi.request("PATCH", "/v1/chats/" + chatId, body, true);
+                    android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                    main.post(() -> status.setText("Профиль чата обновлён"));
+                } catch (Exception e) {
+                    android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                    main.post(() -> { if (status != null) status.setText("Не удалось сохранить: " + e.getMessage()); });
+                }
+            })).show();
+    }
+
+    private void addChatMember() {
+        EditText username = new EditText(getParentActivity());
+        username.setSingleLine(true);
+        username.setHint("@username");
+        new AlertDialog.Builder(getParentActivity()).setTitle("Добавить участника")
+            .setView(username).setNegativeButton("Отмена", null)
+            .setPositiveButton("Добавить", (d, w) -> executor.execute(() -> {
+                try {
+                    JSONObject body = new JSONObject();
+                    body.put("username", username.getText().toString().trim().replace("@", ""));
+                    FreeGramApi.request("POST", "/v1/chats/" + chatId + "/members", body, true);
+                    android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                    main.post(() -> status.setText("Участник добавлен"));
+                } catch (Exception e) {
+                    android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                    main.post(() -> { if (status != null) status.setText("Не удалось добавить участника: " + e.getMessage()); });
+                }
+            })).show();
+    }
+
+    private String giftIcon(String code) {
+        if ("rose".equals(code)) return "🌹";
+        if ("heart".equals(code)) return "❤️";
+        if ("crown".equals(code)) return "👑";
+        if ("dragon".equals(code)) return "🐉";
+        return "🎁";
+    }
+
+    private void showChatGifts() {
+        executor.execute(() -> {
+            try {
+                JSONObject me = FreeGramApi.request("GET", "/v1/me", null, true);
+                JSONObject details = FreeGramApi.request("GET", "/v1/chats/" + chatId, null, true);
+                JSONArray members = details.optJSONArray("members");
+                String myName = me.optString("username", "");
+                String recipient = "";
+                if (members != null) {
+                    for (int i = 0; i < members.length(); i++) {
+                        JSONObject member = members.optJSONObject(i);
+                        if (member != null && !member.optString("username", "").equalsIgnoreCase(myName)) {
+                            recipient = member.optString("username", "");
+                            break;
+                        }
+                    }
+                }
+                final String recipientName = recipient;
+                JSONObject catalog = FreeGramApi.request("GET", "/v1/shop/gifts", null, true);
+                JSONArray gifts = catalog.optJSONArray("gifts");
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> {
+                    if (getParentActivity() == null) return;
+                    if (recipientName.isEmpty() || gifts == null || gifts.length() == 0) {
+                        status.setText("В этом чате пока нельзя отправить подарок.");
+                        return;
+                    }
+                    String[] labels = new String[gifts.length()];
+                    for (int i = 0; i < gifts.length(); i++) {
+                        JSONObject item = gifts.optJSONObject(i);
+                        labels[i] = giftIcon(item.optString("code")) + "  " + item.optString("title") + " · " + item.optLong("price") + " Stars · " + item.optString("rarity");
+                    }
+                    new AlertDialog.Builder(getParentActivity()).setTitle("Подарок для @" + recipientName)
+                        .setItems(labels, (dialog, which) -> executor.execute(() -> {
+                            try {
+                                JSONObject item = gifts.optJSONObject(which);
+                                JSONObject body = new JSONObject();
+                                body.put("gift_code", item.optString("code"));
+                                body.put("recipient_username", recipientName);
+                                body.put("chat_id", chatId);
+                                JSONObject sent = FreeGramApi.request("POST", "/v1/shop/gifts/send", body, true);
+                                android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
+                                h.post(() -> status.setText("Подарок отправлен · баланс: " + sent.optLong("remaining_stars") + " Stars"));
+                            } catch (Exception e) {
+                                android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
+                                h.post(() -> { if (status != null) status.setText("Не удалось отправить подарок: " + e.getMessage()); });
+                            }
+                        })).setNegativeButton("Закрыть", null).show();
+                });
+            } catch (Exception e) {
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> { if (status != null) status.setText("Ошибка магазина: " + e.getMessage()); });
+            }
+        });
+    }
+
     private void createInvite() {
         executor.execute(() -> {
             try {
-                JSONObject result = FreeGramApi.request("POST", "/v1/chats/" + chatId + "/invite",
-                        new JSONObject(), true);
+                JSONObject result = FreeGramApi.request("POST", "/v1/chats/" + chatId + "/invite", new JSONObject(), true);
                 String link = result.optString("invite_link", "");
-                mainHandler.post(() -> {
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> {
                     if (getParentActivity() == null || link.isEmpty()) return;
-                    ClipboardManager clipboard = (ClipboardManager) getParentActivity()
-                            .getSystemService(Context.CLIPBOARD_SERVICE);
+                    ClipboardManager clipboard = (ClipboardManager) getParentActivity().getSystemService(Context.CLIPBOARD_SERVICE);
                     clipboard.setPrimaryClip(ClipData.newPlainText("FreeGram invite", link));
-                    status.setText("Посилання-запрошення скопійовано");
+                    status.setText("Ссылка-приглашение скопирована: " + link);
                 });
             } catch (Exception e) {
-                mainHandler.post(() -> {
-                    if (status != null) status.setText("Не вдалося створити посилання: " + e.getMessage());
-                });
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> { if (status != null) status.setText("Ссылка доступна только владельцу чата: " + e.getMessage()); });
             }
         });
     }
 
     private void sendMessage() {
-        if (composer == null) return;
         String value = composer.getText().toString().trim();
         if (value.isEmpty()) return;
         composer.setEnabled(false);
@@ -345,21 +332,19 @@ public class FreeGramChatFragment extends BaseFragment {
             try {
                 JSONObject body = new JSONObject();
                 body.put("text", value);
-                if (replyToId > 0) body.put("reply_to_id", replyToId);
                 FreeGramApi.request("POST", "/v1/chats/" + chatId + "/messages", body, true);
-                mainHandler.post(() -> {
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> {
                     if (composer == null) return;
                     composer.setText("");
-                    composer.setHint("Сообщение");
                     composer.setEnabled(true);
-                    replyToId = 0;
-                    replyToText = "";
-                    loadMessages(false);
+                    loadMessages();
                 });
             } catch (Exception e) {
-                mainHandler.post(() -> {
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> {
                     if (composer != null) composer.setEnabled(true);
-                    if (status != null) status.setText("Не відправлено: " + e.getMessage());
+                    if (status != null) status.setText("Не отправлено: " + e.getMessage());
                 });
             }
         });
@@ -367,12 +352,10 @@ public class FreeGramChatFragment extends BaseFragment {
 
     @Override
     public void onFragmentDestroy() {
-        mainHandler.removeCallbacks(pollMessages);
+        pollHandler.removeCallbacks(pollRunnable);
         executor.shutdownNow();
         messages = null;
-        messageScroll = null;
         composer = null;
-        status = null;
         super.onFragmentDestroy();
     }
 }

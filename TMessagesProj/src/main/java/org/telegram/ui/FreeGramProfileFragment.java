@@ -64,6 +64,16 @@ public class FreeGramProfileFragment extends BaseFragment {
         root.addView(save, new LinearLayout.LayoutParams(-1, dp(context, 52)));
         save.setOnClickListener(v -> saveProfile());
 
+        Button chatsButton = new Button(context);
+        chatsButton.setText("Мои чаты, группы и каналы");
+        root.addView(chatsButton, new LinearLayout.LayoutParams(-1, dp(context, 50)));
+        chatsButton.setOnClickListener(v -> presentFragment(new FreeGramChatsFragment(), true));
+
+        Button giftsButton = new Button(context);
+        giftsButton.setText("Подарки и NFT-маркет");
+        root.addView(giftsButton, new LinearLayout.LayoutParams(-1, dp(context, 50)));
+        giftsButton.setOnClickListener(v -> presentFragment(new FreeGramGift3DFragment(), true));
+
         ownerPanelButton = new Button(context);
         ownerPanelButton.setText("Панель владельца");
         ownerPanelButton.setVisibility(View.GONE);

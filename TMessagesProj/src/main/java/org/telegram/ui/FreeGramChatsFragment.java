@@ -1,6 +1,9 @@
 package org.telegram.ui;
 
 import android.content.Context;
+import android.app.AlertDialog;
+import android.widget.EditText;
+import android.widget.Button;
 import android.graphics.Color;
 import android.view.View;
 import android.widget.LinearLayout;
@@ -31,6 +34,18 @@ public class FreeGramChatsFragment extends BaseFragment {
         title.setTextColor(Color.rgb(28, 45, 70));
         title.setPadding(18, 18, 18, 8);
         root.addView(title);
+        LinearLayout actions = new LinearLayout(context);
+        actions.setPadding(12, 4, 12, 8);
+        Button group = new Button(context); group.setText("Создать группу");
+        Button channel = new Button(context); channel.setText("Создать канал");
+        Button direct = new Button(context); direct.setText("Написать");
+        actions.addView(group, new LinearLayout.LayoutParams(0, -2, 1));
+        actions.addView(channel, new LinearLayout.LayoutParams(0, -2, 1));
+        actions.addView(direct, new LinearLayout.LayoutParams(0, -2, 1));
+        root.addView(actions);
+        group.setOnClickListener(v -> promptCreate("group"));
+        channel.setOnClickListener(v -> promptCreate("channel"));
+        direct.setOnClickListener(v -> promptCreate("direct"));
         status = new TextView(context);
         status.setText("Загружаем чаты…");
         status.setTextColor(Color.GRAY);
@@ -44,6 +59,37 @@ public class FreeGramChatsFragment extends BaseFragment {
         fragmentView = root;
         loadChats();
         return fragmentView;
+    }
+
+    private void promptCreate(String kind) {
+        if (getParentActivity() == null) return;
+        EditText input = new EditText(getParentActivity());
+        input.setSingleLine(true);
+        input.setHint(kind.equals("direct") ? "Username без @" : "Название");
+        String title = kind.equals("direct") ? "Новый личный чат" : (kind.equals("channel") ? "Новый канал" : "Новая группа");
+        new AlertDialog.Builder(getParentActivity()).setTitle(title).setView(input)
+            .setNegativeButton("Отмена", null).setPositiveButton("Создать", (d, w) -> createChat(kind, input.getText().toString().trim()))
+            .show();
+    }
+
+    private void createChat(String kind, String value) {
+        if (value.isEmpty()) { Toast.makeText(getParentActivity(), "Заполни поле", Toast.LENGTH_SHORT).show(); return; }
+        executor.execute(() -> {
+            String error = null;
+            try {
+                if (!FreeGramApi.ensureDeviceSession()) throw new Exception("Нет соединения с FreeGram");
+                JSONObject body = new JSONObject(); body.put("kind", kind);
+                if (kind.equals("direct")) body.put("username", value.replaceFirst("^@", "")); else body.put("title", value);
+                JSONObject result = FreeGramApi.request("POST", "/v1/chats", body, true);
+                if (!result.optBoolean("ok", false)) throw new Exception("Не удалось создать чат");
+            } catch (Exception e) { error = e.getMessage() == null ? "Ошибка создания" : e.getMessage(); }
+            final String failure = error;
+            new Handler(Looper.getMainLooper()).post(() -> {
+                if (getParentActivity() == null) return;
+                if (failure != null) Toast.makeText(getParentActivity(), failure, Toast.LENGTH_LONG).show();
+                else { Toast.makeText(getParentActivity(), "Готово", Toast.LENGTH_SHORT).show(); loadChats(); }
+            });
+        });
     }
 
     private void loadChats() {

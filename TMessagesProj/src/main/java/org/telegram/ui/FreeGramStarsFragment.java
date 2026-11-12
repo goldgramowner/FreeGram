@@ -137,7 +137,7 @@ public class FreeGramStarsFragment extends BaseFragment {
             if (date.length() > 16) date = date.substring(0, 16).replace('T', ' ');
             TextView row = new TextView(getParentActivity());
             row.setText((delta > 0 ? "+" : "") + delta + " ★    " + reason
-                + (peer.isEmpty() ? "" : " · @" + peer) + (date.isEmpty() ? "" : "\\n" + date));
+                + (peer.isEmpty() ? "" : " · @" + peer) + (date.isEmpty() ? "" : "\n" + date));
             row.setTextColor(delta >= 0 ? Color.rgb(24, 135, 85) : Color.rgb(60, 75, 95));
             row.setTextSize(14);
             row.setPadding(10, 12, 10, 12);

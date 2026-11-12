@@ -410,6 +410,9 @@ def register_device(data: DeviceRegistration):
             RETURNING id, virtual_id, banned""",
             (device_id, virtual_id, username, now))
         user = cur.fetchone()
+        if user is not None:
+            c.execute("""INSERT INTO stars_transactions(user_id,delta,reason,created_at)
+                VALUES(%s,1000,%s,%s)""", (user["id"],"Стартовый баланс FreeGram",now))
         if user is None:
             user = c.execute(
                 "SELECT id, virtual_id, banned FROM users WHERE device_id=%s",
@@ -1018,7 +1021,7 @@ def owner_users(x_owner_secret: str = Header(default=""), authorization: str = H
     require_owner(x_owner_secret, authorization)
     with connect() as c:
         rows = c.execute("""SELECT username, virtual_id, telegram_id, verified, banned,
-            stars, label, nft_username, nft_rarity, virtual_number, created_at
+            stars, premium, label, nft_username, nft_rarity, virtual_number, created_at
             FROM users ORDER BY id DESC LIMIT 200""").fetchall()
     return {"ok": True, "users": rows}
 

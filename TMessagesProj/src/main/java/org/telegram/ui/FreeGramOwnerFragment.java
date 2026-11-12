@@ -102,6 +102,7 @@ public class FreeGramOwnerFragment extends BaseFragment {
                         String nft = user.optString("nft_username", "");
                         String text = target + " · " + id + (number.isEmpty() ? "" : " · " + number)
                             + " · Stars: " + user.optLong("stars")
+                            + (user.optInt("premium") == 1 ? " · Premium" : "")
                             + (user.optInt("banned") == 1 ? " · БАН" : "")
                             + (nft.isEmpty() ? "" : " · @" + nft);
                         TextView row = new TextView(getParentActivity());
@@ -180,11 +181,18 @@ public class FreeGramOwnerFragment extends BaseFragment {
                 else if (which == 7) performUserAction(virtualId, "number_remove", null);
                 else if (which == 8) askValue(virtualId, "nft_set", "NFT username без @", false);
                 else if (which == 9) performUserAction(virtualId, "nft_remove", null);
-                else if (which == 10) askValue(virtualId, "label", "Метка: owner / admin / moder / media / scam", false);
+                else if (which == 10) chooseLabel(virtualId);
                 else if (which == 11) performUserAction(virtualId, "premium_on", null);
                 else if (which == 12) performUserAction(virtualId, "premium_off", null);
                 else performUserAction(virtualId, "unverify", null);
             }).show();
+    }
+
+    private void chooseLabel(String target) {
+        String[] labels = {"owner", "admin", "moder", "media", "scam", "Снять метку"};
+        new AlertDialog.Builder(getParentActivity()).setTitle("Метка аккаунта")
+            .setItems(labels, (dialog, which) -> performUserAction(target, "label",
+                which == labels.length - 1 ? "" : labels[which])).show();
     }
 
     private void askValue(String virtualId, String action, String hint, boolean numeric) {

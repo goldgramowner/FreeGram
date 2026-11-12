@@ -155,18 +155,26 @@ public class FreeGramOwnerFragment extends BaseFragment {
             "Подтвердить аккаунт",
             "Добавить Stars",
             "Снять Stars",
-            "Выдать +888 номер",
+            "Установить баланс Stars",
+            "Сгенерировать +888 номер",
+            "Назначить +888 номер вручную",
+            "Удалить виртуальный номер",
             "Назначить NFT username",
+            "Снять NFT username",
             "Установить метку"
         };
         new AlertDialog.Builder(getParentActivity()).setTitle(virtualId)
             .setItems(options, (dialog, which) -> {
                 if (which == 0) performUserAction(virtualId, banned ? "unban" : "ban", null);
                 else if (which == 1) performUserAction(virtualId, "verify", null);
-                else if (which == 2 || which == 3) askValue(virtualId,
-                    which == 2 ? "stars_add" : "stars_remove", "Количество Stars", true);
-                else if (which == 4) performUserAction(virtualId, "number_generate", null);
-                else if (which == 5) askValue(virtualId, "nft_set", "NFT username без @", false);
+                else if (which == 2) askValue(virtualId, "stars_add", "Количество Stars", true);
+                else if (which == 3) askValue(virtualId, "stars_remove", "Количество Stars", true);
+                else if (which == 4) askValue(virtualId, "stars_set", "Новый баланс Stars", true);
+                else if (which == 5) performUserAction(virtualId, "number_generate", null);
+                else if (which == 6) askValue(virtualId, "number_set", "Номер в формате +888XXXXXXXX", false);
+                else if (which == 7) performUserAction(virtualId, "number_remove", null);
+                else if (which == 8) askValue(virtualId, "nft_set", "NFT username без @", false);
+                else if (which == 9) performUserAction(virtualId, "nft_remove", null);
                 else askValue(virtualId, "label", "Метка аккаунта", false);
             }).show();
     }

@@ -1101,10 +1101,11 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default=""), au
         elif data.action == "nft_remove":
             c.execute("UPDATE users SET nft_username=NULL WHERE id=%s", (user["id"],))
         elif data.action == "number_set":
-            number = str(data.value or "").strip()
-            # Owner-issued virtual numbers may use any country calling code.
-            # Store them as E.164-style strings; this does not activate a real SIM/phone line.
-            if not re.fullmatch(r"\+[0-9]{1,15}", number) or len(number) < 3:
+            raw_number = str(data.value or "").strip()
+            # Accept any country prefix and common visual separators; persist canonical digits.
+            # This is a virtual profile number, not a real SIM/telephone subscription.
+            number = re.sub(r"[\\s().-]", "", raw_number)
+            if not re.fullmatch(r"\+[0-9]{2,15}", number):
                 raise HTTPException(400, "Number must contain + and 2-15 digits")
             try:
                 c.execute("""INSERT INTO user_virtual_numbers(user_id,number,created_at,assigned_by)

@@ -152,7 +152,7 @@ public class FreeGramProfileFragment extends BaseFragment {
                 displayName.setText(data.optString("display_name", ""));
                 bio.setText(data.optString("bio", ""));
                 avatar.setText(data.optString("avatar_url", ""));
-                identity.setText((data.optInt("premium", 0) == 1 ? "FreeGram Premium ✓\\n" : "") + "FreeGram ID: " + data.optString("virtual_id", "—")
+                identity.setText((data.optInt("premium", 0) == 1 ? "FreeGram Premium ✓\n" : "") + "FreeGram ID: " + data.optString("virtual_id", "—")
                     + "\nНомер: " + data.optString("virtual_number", "не назначен")
                     + "\nNFT username: " + (data.optString("nft_username", "").isEmpty() ? "нет" : "@" + data.optString("nft_username"))
                     + "\nСтатус: " + (data.optInt("verified") == 1 ? "✓ подтверждён" : "не подтверждён"));

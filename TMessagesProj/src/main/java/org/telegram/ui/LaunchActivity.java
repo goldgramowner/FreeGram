@@ -573,10 +573,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (actionBarLayout.getFragmentStack().isEmpty() && (layersActionBarLayout == null || layersActionBarLayout.getFragmentStack().isEmpty())) {
             if (!FreeGramApi.hasSession()) {
                 actionBarLayout.addFragmentToStack(new FreeGramAuthFragment());
-            } else if (UserConfig.getInstance(currentAccount).isClientActivated()) {
-                actionBarLayout.addFragmentToStack(new MainTabsActivity());
             } else {
-                actionBarLayout.addFragmentToStack(new LoginActivity());
+                // FreeGram uses its own device session and backend, not a Telegram MTProto login.
+                // Never fall through to LoginActivity here: that would incorrectly request a phone number.
+                actionBarLayout.addFragmentToStack(new FreeGramHomeFragment());
             }
 
             try {

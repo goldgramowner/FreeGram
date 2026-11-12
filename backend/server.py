@@ -50,6 +50,15 @@ def init_db():
             c.execute(sql)
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_nft_username_uq ON users (LOWER(nft_username)) WHERE nft_username IS NOT NULL")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_virtual_number_uq ON users (virtual_number) WHERE virtual_number IS NOT NULL")
+        c.execute("""CREATE TABLE IF NOT EXISTS user_virtual_numbers (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            number TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            assigned_by TEXT NOT NULL DEFAULT 'owner')""")
+        c.execute("""INSERT INTO user_virtual_numbers(user_id,number,created_at)
+            SELECT id,virtual_number,created_at FROM users WHERE virtual_number IS NOT NULL
+            ON CONFLICT(number) DO NOTHING""")
         c.execute("""CREATE TABLE IF NOT EXISTS chats (
             id BIGSERIAL PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('direct','group','channel')),
             title TEXT NOT NULL DEFAULT '', direct_key TEXT UNIQUE,
@@ -661,6 +670,16 @@ def toggle_reaction(chat_id: int, message_id: int, data: ReactionSet, authorizat
     return {"ok":True,"active":active,"reaction_count":count}
 
 
+@app.get("/v1/me/numbers")
+def my_virtual_numbers(authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    with connect() as c:
+        rows = c.execute("""SELECT number,created_at,assigned_by
+            FROM user_virtual_numbers WHERE user_id=%s ORDER BY id DESC""",
+            (user["id"],)).fetchall()
+    return {"ok": True, "numbers": rows}
+
+
 @app.patch("/v1/me")
 def update_me(data: ProfileUpdate, authorization: str = Header(default="")):
     user = authenticated_user(authorization)
@@ -1084,20 +1103,27 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default=""), au
             number = str(data.value or "").strip()
             if not number.startswith("+888") or not number[1:].isdigit() or len(number) not in (12, 13, 14):
                 raise HTTPException(400, "Number must be a valid +888 virtual number")
-            try: c.execute("UPDATE users SET virtual_number=%s WHERE id=%s", (number, user["id"]))
-            except psycopg.errors.UniqueViolation: raise HTTPException(409, "Number already assigned")
+            try:
+                c.execute("""INSERT INTO user_virtual_numbers(user_id,number,created_at,assigned_by)
+                    VALUES(%s,%s,%s,'owner')""", (user["id"],number,datetime.now(timezone.utc).isoformat()))
+            except psycopg.errors.UniqueViolation:
+                raise HTTPException(409, "Number already assigned")
+            c.execute("UPDATE users SET virtual_number=COALESCE(virtual_number,%s) WHERE id=%s", (number,user["id"]))
         elif data.action == "number_remove":
+            c.execute("DELETE FROM user_virtual_numbers WHERE user_id=%s", (user["id"],))
             c.execute("UPDATE users SET virtual_number=NULL WHERE id=%s", (user["id"],))
         elif data.action == "number_generate":
             number = None
             for _ in range(30):
                 candidate = "+888" + "".join(str(secrets.randbelow(10)) for _ in range(8))
-                if not c.execute("SELECT 1 FROM users WHERE virtual_number=%s", (candidate,)).fetchone():
+                if not c.execute("SELECT 1 FROM user_virtual_numbers WHERE number=%s", (candidate,)).fetchone():
                     number = candidate
                     break
             if not number:
                 raise HTTPException(503, "Could not allocate a virtual number")
-            c.execute("UPDATE users SET virtual_number=%s WHERE id=%s", (number, user["id"]))
+            c.execute("""INSERT INTO user_virtual_numbers(user_id,number,created_at,assigned_by)
+                VALUES(%s,%s,%s,'owner')""", (user["id"],number,datetime.now(timezone.utc).isoformat()))
+            c.execute("UPDATE users SET virtual_number=COALESCE(virtual_number,%s) WHERE id=%s", (number,user["id"]))
         if data.action in ("stars_add", "stars_remove", "stars_set"):
             after_stars = c.execute("SELECT stars FROM users WHERE id=%s", (user["id"],)).fetchone()["stars"]
             delta = after_stars - user["stars"]

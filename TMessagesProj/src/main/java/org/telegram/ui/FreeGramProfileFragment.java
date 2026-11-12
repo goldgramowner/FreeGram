@@ -1,6 +1,8 @@
 package org.telegram.ui;
 
 import android.content.Context;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.view.Gravity;
@@ -26,6 +28,7 @@ public class FreeGramProfileFragment extends BaseFragment {
     private EditText username, displayName, bio, avatar;
     private TextView status, identity;
     private Button ownerPanelButton;
+    private Button numbersButton;
     private boolean loading;
 
     @Override
@@ -63,6 +66,11 @@ public class FreeGramProfileFragment extends BaseFragment {
         save.setText("Сохранить изменения");
         root.addView(save, new LinearLayout.LayoutParams(-1, dp(context, 52)));
         save.setOnClickListener(v -> saveProfile());
+
+        numbersButton = new Button(context);
+        numbersButton.setText("Мои виртуальные номера");
+        root.addView(numbersButton, new LinearLayout.LayoutParams(-1, dp(context, 50)));
+        numbersButton.setOnClickListener(v -> showNumbers());
 
         Button chatsButton = new Button(context);
         chatsButton.setText("Мои чаты, группы и каналы");
@@ -112,6 +120,46 @@ public class FreeGramProfileFragment extends BaseFragment {
 
     private static int dp(Context c, float value) {
         return (int) (value * c.getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private void showNumbers() {
+        executor.execute(() -> {
+            String[] labels;
+            try {
+                JSONObject result = FreeGramApi.request("GET", "/v1/me/numbers", null, true);
+                org.json.JSONArray items = result.optJSONArray("numbers");
+                int count = items == null ? 0 : items.length();
+                labels = new String[count];
+                for (int i = 0; i < count; i++) {
+                    JSONObject item = items.optJSONObject(i);
+                    labels[i] = item == null ? "Номер" : item.optString("number", "Номер");
+                }
+            } catch (Exception e) {
+                final String error = e.getMessage() == null ? "Не удалось загрузить номера" : e.getMessage();
+                main.post(() -> {
+                    if (getParentActivity() != null) new android.app.AlertDialog.Builder(getParentActivity())
+                        .setMessage(error).setPositiveButton("OK", null).show();
+                });
+                return;
+            }
+            final String[] numbers = labels;
+            main.post(() -> {
+                if (getParentActivity() == null) return;
+                if (numbers.length == 0) {
+                    new android.app.AlertDialog.Builder(getParentActivity()).setTitle("Мои номера")
+                        .setMessage("Виртуальные номера пока не назначены.")
+                        .setPositiveButton("OK", null).show();
+                    return;
+                }
+                new android.app.AlertDialog.Builder(getParentActivity()).setTitle("Мои виртуальные номера")
+                    .setItems(numbers, (dialog, which) -> {
+                        ClipboardManager clipboard = (ClipboardManager) getParentActivity()
+                            .getSystemService(Context.CLIPBOARD_SERVICE);
+                        clipboard.setPrimaryClip(ClipData.newPlainText("FreeGram number", numbers[which]));
+                        Toast.makeText(getParentActivity(), "Номер скопирован", Toast.LENGTH_SHORT).show();
+                    }).setPositiveButton("Закрыть", null).show();
+            });
+        });
     }
 
     private void checkOwnerAccess() {
@@ -208,6 +256,7 @@ public class FreeGramProfileFragment extends BaseFragment {
         status = null;
         identity = null;
         ownerPanelButton = null;
+        numbersButton = null;
         super.onFragmentDestroy();
     }
 }

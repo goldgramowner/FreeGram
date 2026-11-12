@@ -1,0 +1,29 @@
+databases:
+  - name: freegram-db
+    databaseName: freegram
+    user: freegram
+    plan: basic-256mb
+    region: frankfurt
+
+services:
+  - type: web
+    name: freegram-api
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: freegram-db
+          property: connectionString
+      - key: BOT_API_SECRET
+        generateValue: true
+      - key: OWNER_API_SECRET
+        generateValue: true
+      - key: OWNER_FREEGRAM_ID
+        sync: false
+      - key: OWNER_FREEGRAM_USERNAME
+        sync: false

@@ -96,9 +96,11 @@ public class FreeGramOwnerFragment extends BaseFragment {
                         JSONObject user = users.optJSONObject(i);
                         if (user == null) continue;
                         String id = user.optString("virtual_id", "");
+                        String username = user.optString("username", "");
+                        String target = username.isEmpty() ? id : "@" + username;
                         String number = user.optString("virtual_number", "");
                         String nft = user.optString("nft_username", "");
-                        String text = id + (number.isEmpty() ? "" : " · " + number)
+                        String text = target + " · " + id + (number.isEmpty() ? "" : " · " + number)
                             + " · Stars: " + user.optLong("stars")
                             + (user.optInt("banned") == 1 ? " · БАН" : "")
                             + (nft.isEmpty() ? "" : " · @" + nft);
@@ -111,7 +113,7 @@ public class FreeGramOwnerFragment extends BaseFragment {
                         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
                         lp.bottomMargin = 1;
                         rows.addView(row, lp);
-                        row.setOnClickListener(v -> showUserActions(id, user.optInt("banned") == 1));
+                        row.setOnClickListener(v -> showUserActions(username.isEmpty() ? id : "@" + username, user.optInt("banned") == 1));
                     }
                 });
             } catch (Exception e) { showError(e); }
@@ -190,11 +192,12 @@ public class FreeGramOwnerFragment extends BaseFragment {
             .show();
     }
 
-    private void performUserAction(String virtualId, String action, String value) {
+    private void performUserAction(String target, String action, String value) {
         executor.execute(() -> {
             try {
                 JSONObject body = new JSONObject();
-                body.put("virtual_id", virtualId);
+                if (target.startsWith("@")) body.put("username", target.substring(1));
+                else body.put("virtual_id", target);
                 body.put("action", action);
                 if (value != null) body.put("value", value);
                 FreeGramApi.request("POST", "/v1/owner/action", body, true);

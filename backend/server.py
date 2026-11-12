@@ -1102,8 +1102,10 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default=""), au
             c.execute("UPDATE users SET nft_username=NULL WHERE id=%s", (user["id"],))
         elif data.action == "number_set":
             number = str(data.value or "").strip()
-            if not number.startswith("+888") or not number[1:].isdigit() or len(number) not in (12, 13, 14):
-                raise HTTPException(400, "Number must be a valid +888 virtual number")
+            # Owner-issued virtual numbers may use any country calling code.
+            # Store them as E.164-style strings; this does not activate a real SIM/phone line.
+            if not re.fullmatch(r"\+[0-9]{1,15}", number) or len(number) < 3:
+                raise HTTPException(400, "Number must contain + and 2-15 digits")
             try:
                 c.execute("""INSERT INTO user_virtual_numbers(user_id,number,created_at,assigned_by)
                     VALUES(%s,%s,%s,'owner')""", (user["id"],number,datetime.now(timezone.utc).isoformat()))

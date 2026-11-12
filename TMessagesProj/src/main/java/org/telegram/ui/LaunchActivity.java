@@ -419,6 +419,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         ApplicationLoader.postInitApplication();
         AndroidUtilities.checkDisplaySize(this, getResources().getConfiguration());
         currentAccount = UserConfig.selectedAccount;
+        new Thread(() -> FreeGramApi.ensureDeviceSession(), "freegram-device-session").start();
         if (BuildVars.DEBUG_VERSION || BuildVars.DEBUG_PRIVATE_VERSION) {
             registerDebugThemeReceiver();
         }
@@ -571,13 +572,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
         LiteMode.addOnPowerSaverAppliedListener(onPowerSaverCallback = this::onPowerSaver);
         if (actionBarLayout.getFragmentStack().isEmpty() && (layersActionBarLayout == null || layersActionBarLayout.getFragmentStack().isEmpty())) {
-            if (!FreeGramApi.hasSession()) {
-                actionBarLayout.addFragmentToStack(new FreeGramAuthFragment());
-            } else {
-                // FreeGram uses its own device session and backend, not a Telegram MTProto login.
-                // Never fall through to LoginActivity here: that would incorrectly request a phone number.
-                actionBarLayout.addFragmentToStack(new FreeGramHomeFragment());
-            }
+            // Use Telegram's native dialogs/tabs UI. Device identity is provisioned silently.
+            actionBarLayout.addFragmentToStack(new MainTabsActivity());
 
             try {
                 if (savedInstanceState != null) {

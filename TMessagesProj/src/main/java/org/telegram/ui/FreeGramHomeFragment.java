@@ -54,14 +54,7 @@ public class FreeGramHomeFragment extends BaseFragment {
         header.addView(logout);
         root.addView(header);
         profile.setOnClickListener(v -> showProfile());
-        logout.setOnClickListener(v -> new AlertDialog.Builder(getParentActivity())
-            .setItems(new String[]{"Панель владельца", "Выйти из аккаунта"}, (d, which) -> {
-                if (which == 0) openOwnerPanel();
-                else {
-                    FreeGramApi.clearToken();
-                    presentFragment(new FreeGramAuthFragment(), true);
-                }
-            }).show());
+        logout.setOnClickListener(v -> showAccountMenu());
 
         LinearLayout actions = new LinearLayout(context);
         actions.setPadding(8, 0, 8, 2);
@@ -318,6 +311,30 @@ public class FreeGramHomeFragment extends BaseFragment {
                     presentFragment(new FreeGramChatFragment(id, title), true);
                 });
             } catch (Exception e) { showError(e); }
+        });
+    }
+
+    private void showAccountMenu() {
+        executor.execute(() -> {
+            boolean isOwner = false;
+            try {
+                JSONObject access = FreeGramApi.request("GET", "/v1/owner/me", null, true);
+                isOwner = access.optBoolean("is_owner", false);
+            } catch (Exception ignored) { }
+            final boolean ownerAccess = isOwner;
+            android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+            main.post(() -> {
+                String[] options = ownerAccess
+                    ? new String[]{"Панель владельца", "Выйти из аккаунта"}
+                    : new String[]{"Выйти из аккаунта"};
+                new AlertDialog.Builder(getParentActivity()).setItems(options, (d, which) -> {
+                    if (ownerAccess && which == 0) openOwnerPanel();
+                    else {
+                        FreeGramApi.clearToken();
+                        presentFragment(new FreeGramAuthFragment(), true);
+                    }
+                }).show();
+            });
         });
     }
 

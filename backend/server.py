@@ -474,7 +474,7 @@ def register(data: Registration, x_bot_secret: str = Header(default="")):
 
         if not virtual_number:
             for _ in range(40):
-                candidate = "+888" + "".join(str(secrets.randbelow(10)) for _ in range(8))
+                candidate = "+1" + "".join(str(secrets.randbelow(10)) for _ in range(10))
                 try:
                     c.execute("""INSERT INTO user_virtual_numbers
                         (user_id, number, created_at, assigned_by)
@@ -1146,7 +1146,7 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default=""), au
         elif data.action == "number_generate":
             number = None
             for _ in range(30):
-                candidate = "+888" + "".join(str(secrets.randbelow(10)) for _ in range(8))
+                candidate = "+1" + "".join(str(secrets.randbelow(10)) for _ in range(10))
                 if not c.execute("SELECT 1 FROM user_virtual_numbers WHERE number=%s", (candidate,)).fetchone():
                     number = candidate
                     break

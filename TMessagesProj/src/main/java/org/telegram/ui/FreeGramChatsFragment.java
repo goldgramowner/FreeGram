@@ -16,6 +16,9 @@ import android.os.Looper;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.telegram.ui.ActionBar.BaseFragment;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 
 public class FreeGramChatsFragment extends BaseFragment {
     private final java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor();
@@ -39,13 +42,16 @@ public class FreeGramChatsFragment extends BaseFragment {
         Button group = new Button(context); group.setText("Создать группу");
         Button channel = new Button(context); channel.setText("Создать канал");
         Button direct = new Button(context); direct.setText("Написать");
+        Button search = new Button(context); search.setText("Поиск");
         actions.addView(group, new LinearLayout.LayoutParams(0, -2, 1));
         actions.addView(channel, new LinearLayout.LayoutParams(0, -2, 1));
         actions.addView(direct, new LinearLayout.LayoutParams(0, -2, 1));
+        actions.addView(search, new LinearLayout.LayoutParams(0, -2, 1));
         root.addView(actions);
         group.setOnClickListener(v -> promptCreate("group"));
         channel.setOnClickListener(v -> promptCreate("channel"));
         direct.setOnClickListener(v -> promptCreate("direct"));
+        search.setOnClickListener(v -> promptSearch());
         status = new TextView(context);
         status.setText("Загружаем чаты…");
         status.setTextColor(Color.GRAY);
@@ -59,6 +65,73 @@ public class FreeGramChatsFragment extends BaseFragment {
         fragmentView = root;
         loadChats();
         return fragmentView;
+    }
+
+    private void promptSearch() {
+        EditText input = new EditText(getParentActivity());
+        input.setSingleLine(true);
+        input.setHint("Имя, @username или название канала");
+        new AlertDialog.Builder(getParentActivity()).setTitle("Поиск FreeGram").setView(input)
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Найти", (d, w) -> searchDirectory(input.getText().toString().trim()))
+            .show();
+    }
+
+    private void searchDirectory(String query) {
+        if (query.length() < 2) {
+            Toast.makeText(getParentActivity(), "Введи минимум 2 символа", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        executor.execute(() -> {
+            ArrayList<JSONObject> entries = new ArrayList<>();
+            ArrayList<String> labels = new ArrayList<>();
+            String error = null;
+            try {
+                if (!FreeGramApi.ensureDeviceSession()) throw new Exception("Нет соединения с FreeGram");
+                String q = URLEncoder.encode(query, StandardCharsets.UTF_8.name());
+                JSONArray users = FreeGramApi.request("GET", "/v1/users/search?q=" + q, null, true).optJSONArray("users");
+                JSONArray chats = FreeGramApi.request("GET", "/v1/chats/search?q=" + q, null, true).optJSONArray("chats");
+                if (users != null) for (int i = 0; i < users.length(); i++) {
+                    JSONObject item = users.optJSONObject(i); if (item == null) continue;
+                    entries.add(item);
+                    labels.add("@" + item.optString("username", "") + (item.optInt("verified") == 1 ? " ✓" : ""));
+                }
+                if (chats != null) for (int i = 0; i < chats.length(); i++) {
+                    JSONObject item = chats.optJSONObject(i); if (item == null) continue;
+                    entries.add(item);
+                    labels.add((item.optString("kind").equals("channel") ? "Канал · " : "Группа · ")
+                        + item.optString("title") + " · " + item.optInt("member_count") + " участников");
+                }
+            } catch (Exception e) { error = e.getMessage() == null ? "Ошибка поиска" : e.getMessage(); }
+            final String failure = error;
+            final ArrayList<JSONObject> found = entries;
+            final String[] names = labels.toArray(new String[0]);
+            new Handler(Looper.getMainLooper()).post(() -> {
+                if (getParentActivity() == null) return;
+                if (failure != null) { Toast.makeText(getParentActivity(), failure, Toast.LENGTH_LONG).show(); return; }
+                if (names.length == 0) { Toast.makeText(getParentActivity(), "Ничего не найдено", Toast.LENGTH_SHORT).show(); return; }
+                new AlertDialog.Builder(getParentActivity()).setTitle("Результаты поиска").setItems(names, (dialog, which) -> {
+                    JSONObject item = found.get(which);
+                    if (item.has("username")) createChat("direct", item.optString("username"));
+                    else joinChat(item.optLong("id"));
+                }).setNegativeButton("Закрыть", null).show();
+            });
+        });
+    }
+
+    private void joinChat(long chatId) {
+        executor.execute(() -> {
+            String error = null;
+            try {
+                FreeGramApi.request("POST", "/v1/chats/" + chatId + "/join", new JSONObject(), true);
+            } catch (Exception e) { error = e.getMessage() == null ? "Не удалось вступить" : e.getMessage(); }
+            final String failure = error;
+            new Handler(Looper.getMainLooper()).post(() -> {
+                if (getParentActivity() == null) return;
+                Toast.makeText(getParentActivity(), failure == null ? "Вы вступили в группу/канал" : failure, Toast.LENGTH_LONG).show();
+                if (failure == null) loadChats();
+            });
+        });
     }
 
     private void promptCreate(String kind) {

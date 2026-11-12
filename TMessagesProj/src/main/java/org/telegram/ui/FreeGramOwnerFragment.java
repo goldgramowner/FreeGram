@@ -159,8 +159,8 @@ public class FreeGramOwnerFragment extends BaseFragment {
             "Добавить Stars",
             "Снять Stars",
             "Установить баланс Stars",
-            "Сгенерировать +888 номер",
-            "Назначить +888 номер вручную",
+            "Сгенерировать виртуальный +888 номер",
+            "Назначить виртуальный номер с любым кодом страны",
             "Удалить все виртуальные номера",
             "Назначить NFT username",
             "Снять NFT username",
@@ -177,7 +177,7 @@ public class FreeGramOwnerFragment extends BaseFragment {
                 else if (which == 3) askValue(virtualId, "stars_remove", "Количество Stars", true);
                 else if (which == 4) askValue(virtualId, "stars_set", "Новый баланс Stars", true);
                 else if (which == 5) performUserAction(virtualId, "number_generate", null);
-                else if (which == 6) askValue(virtualId, "number_set", "Номер в формате +888XXXXXXXX", false);
+                else if (which == 6) askValue(virtualId, "number_set", "Номер: + и 2–15 цифр (например, +12125550123)", false);
                 else if (which == 7) performUserAction(virtualId, "number_remove", null);
                 else if (which == 8) askValue(virtualId, "nft_set", "NFT username без @", false);
                 else if (which == 9) performUserAction(virtualId, "nft_remove", null);

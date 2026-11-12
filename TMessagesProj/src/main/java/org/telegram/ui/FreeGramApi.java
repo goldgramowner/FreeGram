@@ -2,6 +2,8 @@ package org.telegram.ui;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.provider.Settings;
+import java.util.UUID;
 
 import org.telegram.messenger.ApplicationLoader;
 
@@ -40,6 +42,21 @@ public final class FreeGramApi {
 
     public static void clearToken() {
         prefs().edit().remove(TOKEN).apply();
+    }
+
+    public static String deviceId() {
+        SharedPreferences p = prefs();
+        String saved = p.getString("device_id", "");
+        if (!saved.isEmpty()) return saved;
+        Context context = ApplicationLoader.applicationContext;
+        String androidId = Settings.Secure.getString(
+                context.getContentResolver(), Settings.Secure.ANDROID_ID);
+        if (androidId == null || androidId.trim().isEmpty()
+                || "9774d56d682e549c".equalsIgnoreCase(androidId)) {
+            androidId = UUID.randomUUID().toString().replace("-", "");
+        }
+        p.edit().putString("device_id", androidId).apply();
+        return androidId;
     }
 
     public static JSONObject request(String method, String path, JSONObject body, boolean authenticated) throws Exception {

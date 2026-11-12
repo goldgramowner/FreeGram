@@ -7,7 +7,6 @@ import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -20,10 +19,9 @@ import java.util.concurrent.Executors;
 
 public class FreeGramAuthFragment extends BaseFragment {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private EditText idField;
-    private EditText codeField;
     private TextView status;
-    private Button loginButton;
+    private Button retryButton;
+    private volatile boolean creating;
 
     private int dp(Context context, int value) {
         return (int) (value * context.getResources().getDisplayMetrics().density + 0.5f);
@@ -34,19 +32,6 @@ public class FreeGramAuthFragment extends BaseFragment {
         shape.setColor(color);
         shape.setCornerRadius(dp(context, radius));
         return shape;
-    }
-
-    private EditText makeField(Context context, String hint, int inputType) {
-        EditText field = new EditText(context);
-        field.setSingleLine(true);
-        field.setHint(hint);
-        field.setTextSize(16);
-        field.setTextColor(Color.rgb(25, 39, 57));
-        field.setHintTextColor(Color.rgb(130, 145, 164));
-        field.setInputType(inputType);
-        field.setPadding(dp(context, 14), 0, dp(context, 14), 0);
-        field.setBackground(rounded(context, Color.WHITE, 12));
-        return field;
     }
 
     @Override
@@ -65,108 +50,77 @@ public class FreeGramAuthFragment extends BaseFragment {
 
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(context, 22), dp(context, 26), dp(context, 22), dp(context, 22));
-        card.setBackground(rounded(context, Color.WHITE, 20));
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        card.setPadding(dp(context, 24), dp(context, 30), dp(context, 24), dp(context, 26));
+        card.setBackground(rounded(context, Color.WHITE, 22));
         root.addView(card, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        TextView title = new TextView(context);
-        title.setText("FreeGram");
-        title.setTextColor(Color.rgb(35, 111, 220));
-        title.setTextSize(32);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        title.setGravity(Gravity.CENTER);
-        card.addView(title, new LinearLayout.LayoutParams(-1, -2));
+        TextView logo = new TextView(context);
+        logo.setText("FreeGram");
+        logo.setTextColor(Color.rgb(35, 111, 220));
+        logo.setTextSize(34);
+        logo.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        logo.setGravity(Gravity.CENTER);
+        card.addView(logo, new LinearLayout.LayoutParams(-1, -2));
 
         TextView subtitle = new TextView(context);
-        subtitle.setText("Вход по FreeGram ID");
+        subtitle.setText("Мессенджер начинается здесь");
         subtitle.setTextColor(Color.rgb(45, 58, 75));
         subtitle.setTextSize(18);
         subtitle.setGravity(Gravity.CENTER);
-        subtitle.setPadding(0, dp(context, 8), 0, dp(context, 10));
+        subtitle.setPadding(0, dp(context, 10), 0, dp(context, 12));
         card.addView(subtitle, new LinearLayout.LayoutParams(-1, -2));
 
-        TextView instructions = new TextView(context);
-        instructions.setText("Открой @FreeGramHbot и отправь /register. Для повторного кода используй /login FG-XXXXXXXXXX.");
-        instructions.setTextColor(Color.rgb(105, 120, 140));
-        instructions.setTextSize(13);
-        instructions.setGravity(Gravity.CENTER);
-        instructions.setPadding(0, 0, 0, dp(context, 22));
-        card.addView(instructions, new LinearLayout.LayoutParams(-1, -2));
-
-        TextView idLabel = new TextView(context);
-        idLabel.setText("FREEGRAM ID");
-        idLabel.setTextColor(Color.rgb(75, 91, 112));
-        idLabel.setTextSize(12);
-        idLabel.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        card.addView(idLabel);
-
-        idField = makeField(context, "FG-XXXXXXXXXX",
-                android.text.InputType.TYPE_CLASS_TEXT
-                | android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
-        LinearLayout.LayoutParams fieldParams = new LinearLayout.LayoutParams(-1, dp(context, 52));
-        fieldParams.topMargin = dp(context, 7);
-        fieldParams.bottomMargin = dp(context, 16);
-        card.addView(idField, fieldParams);
-
-        TextView codeLabel = new TextView(context);
-        codeLabel.setText("ОДНОРАЗОВЫЙ КОД");
-        codeLabel.setTextColor(Color.rgb(75, 91, 112));
-        codeLabel.setTextSize(12);
-        codeLabel.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        card.addView(codeLabel);
-
-        codeField = makeField(context, "123456",
-                android.text.InputType.TYPE_CLASS_NUMBER
-                | android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD);
-        fieldParams = new LinearLayout.LayoutParams(-1, dp(context, 52));
-        fieldParams.topMargin = dp(context, 7);
-        fieldParams.bottomMargin = dp(context, 18);
-        card.addView(codeField, fieldParams);
-
-        loginButton = new Button(context);
-        loginButton.setText("Войти");
-        loginButton.setAllCaps(false);
-        loginButton.setTextColor(Color.WHITE);
-        loginButton.setTextSize(16);
-        loginButton.setBackground(rounded(context, Color.rgb(35, 111, 220), 12));
-        card.addView(loginButton, new LinearLayout.LayoutParams(-1, dp(context, 50)));
+        TextView explanation = new TextView(context);
+        explanation.setText("Создадим один аккаунт FreeGram для этого устройства. Регистрация через бота и ввод кодов не нужны.");
+        explanation.setTextColor(Color.rgb(105, 120, 140));
+        explanation.setTextSize(14);
+        explanation.setGravity(Gravity.CENTER);
+        explanation.setPadding(0, 0, 0, dp(context, 22));
+        card.addView(explanation, new LinearLayout.LayoutParams(-1, -2));
 
         status = new TextView(context);
-        status.setTextColor(Color.rgb(92, 108, 128));
-        status.setTextSize(13);
+        status.setText("Подключаемся к FreeGram…");
+        status.setTextColor(Color.rgb(75, 91, 112));
+        status.setTextSize(14);
         status.setGravity(Gravity.CENTER);
-        status.setPadding(0, dp(context, 14), 0, 0);
+        status.setPadding(0, dp(context, 4), 0, dp(context, 18));
         card.addView(status, new LinearLayout.LayoutParams(-1, -2));
 
-        loginButton.setOnClickListener(v -> verifyCode(context));
+        retryButton = new Button(context);
+        retryButton.setText("Повторить подключение");
+        retryButton.setAllCaps(false);
+        retryButton.setTextColor(Color.WHITE);
+        retryButton.setTextSize(16);
+        retryButton.setBackground(rounded(context, Color.rgb(35, 111, 220), 14));
+        retryButton.setVisibility(android.view.View.GONE);
+        card.addView(retryButton, new LinearLayout.LayoutParams(-1, dp(context, 50)));
+        retryButton.setOnClickListener(v -> createOrOpenAccount(context));
+
         fragmentView = scroll;
+        createOrOpenAccount(context);
         return fragmentView;
     }
 
-    private void verifyCode(Context context) {
-        String virtualId = idField.getText().toString().trim().toUpperCase();
-        String code = codeField.getText().toString().trim();
-        if (!virtualId.matches("FG-[A-F0-9]{10}") || !code.matches("[0-9]{6}")) {
-            status.setText("Введи FreeGram ID и шестизначный код из бота.");
-            return;
-        }
-        loginButton.setEnabled(false);
-        status.setText("Проверяем ID и код…");
+    private void createOrOpenAccount(Context context) {
+        if (creating || status == null) return;
+        creating = true;
+        retryButton.setEnabled(false);
+        retryButton.setVisibility(android.view.View.GONE);
+        status.setText("Создаём или восстанавливаем аккаунт устройства…");
         executor.execute(() -> {
             try {
                 JSONObject body = new JSONObject();
-                body.put("virtual_id", virtualId);
-                body.put("code", code);
-                JSONObject result = FreeGramApi.request("POST", "/v1/auth/verify", body, false);
+                body.put("device_id", FreeGramApi.deviceId());
+                JSONObject result = FreeGramApi.request("POST", "/v1/auth/device", body, false);
                 String token = result.optString("access_token", "");
-                if (token.isEmpty()) {
-                    throw new Exception("Сервер не вернул токен авторизации.");
-                }
+                if (token.isEmpty()) throw new Exception("Сервер не выдал сессию.");
                 FreeGramApi.saveToken(token);
                 FreeGramApi.request("GET", "/v1/me", null, true);
                 android.os.Handler main = new android.os.Handler(context.getMainLooper());
                 main.post(() -> {
+                    creating = false;
                     if (getParentActivity() != null) {
                         presentFragment(new FreeGramHomeFragment(), true);
                     }
@@ -174,10 +128,14 @@ public class FreeGramAuthFragment extends BaseFragment {
             } catch (Exception error) {
                 android.os.Handler main = new android.os.Handler(context.getMainLooper());
                 main.post(() -> {
-                    status.setText(error.getMessage() == null
-                            ? "Не удалось войти. Проверь ID и код."
-                            : error.getMessage());
-                    loginButton.setEnabled(true);
+                    creating = false;
+                    if (status != null) {
+                        String message = error.getMessage();
+                        status.setText("Сервер FreeGram пока недоступен. " +
+                                (message == null ? "Попробуй подключиться ещё раз." : message));
+                        retryButton.setEnabled(true);
+                        retryButton.setVisibility(android.view.View.VISIBLE);
+                    }
                 });
             }
         });

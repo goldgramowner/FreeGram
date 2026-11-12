@@ -97,49 +97,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=owner_keyboard())
     else:
         await update.message.reply_text(
-            "FreeGram Bot\nДля регистрации: /register. Для повторного кода входа: /login FG-XXXXXXXXXX.")
-
-
-async def register_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_user = update.effective_user
-    try:
-        result = await asyncio.to_thread(
-            api_request, "/v1/registrations", "POST",
-            {"telegram_id": telegram_user.id}, "bot"
-        )
-        await update.message.reply_text(
-            "Аккаунт FreeGram готов.\n"
-            f'FreeGram ID: {result["virtual_id"]}\n'
-            f'Код входа: {result["code"]}\n'
-            "Код действует 10 минут. Введи ID и код в приложении."
-        )
-    except Exception:
-        log.exception("FreeGram registration failed")
-        await update.message.reply_text("Не удалось создать аккаунт. Попробуй позже.")
-
-
-async def login_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_user = update.effective_user
-    if not context.args:
-        await update.message.reply_text("Формат: /login FG-XXXXXXXXXX")
-        return
-    virtual_id = context.args[0].strip().upper()
-    if not (virtual_id.startswith("FG-") and len(virtual_id) == 13
-            and virtual_id[3:].isalnum()):
-        await update.message.reply_text("Проверь формат FreeGram ID.")
-        return
-    try:
-        result = await asyncio.to_thread(
-            api_request, "/v1/auth/code", "POST",
-            {"virtual_id": virtual_id, "telegram_id": telegram_user.id}, "bot"
-        )
-        await update.message.reply_text(
-            f'Код входа в FreeGram: {result["code"]}\n'
-            "Код действует 10 минут. Никому его не пересылай."
-        )
-    except Exception as e:
-        log.exception("FreeGram login-code request failed")
-        await update.message.reply_text(f"Не удалось выдать код: {str(e)[:180]}")
+            "FreeGram Bot\nАккаунт теперь создаётся автоматически при первом запуске приложения.\nПанель влась выдать код: {str(e)[:180]}")
 
 
 async def owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -317,8 +275,6 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 def build_application():
     telegram_app = Application.builder().token(BOT_TOKEN).build()
     telegram_app.add_handler(CommandHandler("start", start))
-    telegram_app.add_handler(CommandHandler("register", register_user))
-    telegram_app.add_handler(CommandHandler("login", login_code))
     telegram_app.add_handler(CommandHandler("owner", owner))
     telegram_app.add_handler(CommandHandler("users", users))
     commands = [

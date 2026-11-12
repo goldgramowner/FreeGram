@@ -33,6 +33,8 @@ def init_db():
         c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT")
         c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_salt TEXT")
         c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT")
+        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS device_id TEXT")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_device_id_uq ON users (device_id) WHERE device_id IS NOT NULL")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_username_uq ON users (LOWER(username)) WHERE username IS NOT NULL")
         for sql in [
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS banned INTEGER NOT NULL DEFAULT 0",
@@ -162,6 +164,9 @@ class DirectLogin(BaseModel):
     username: str = Field(min_length=5, max_length=24)
     password: str = Field(min_length=8, max_length=128)
 
+class DeviceRegistration(BaseModel):
+    device_id: str = Field(min_length=16, max_length=128)
+
 class Verification(BaseModel):
     virtual_id: str
     code: str
@@ -267,6 +272,46 @@ def direct_login(data: DirectLogin):
         token = issue_session(c, user["id"])
     return {"ok": True, "virtual_id": user["virtual_id"], "username": username,
             "access_token": token, "token_type": "Bearer"}
+
+@app.post("/v1/auth/device")
+def register_device(data: DeviceRegistration):
+    device_id = data.device_id.strip()
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{16,128}", device_id):
+        raise HTTPException(400, "Invalid device identifier")
+    now = datetime.now(timezone.utc).isoformat()
+    with connect() as c:
+        user = c.execute(
+            "SELECT id, virtual_id, banned FROM users WHERE device_id=%s",
+            (device_id,)
+        ).fetchone()
+        if user:
+            if user["banned"]:
+                raise HTTPException(403, "Device account banned")
+            token = issue_session(c, user["id"])
+            return {"ok": True, "virtual_id": user["virtual_id"],
+                    "username": None, "access_token": token,
+                    "token_type": "Bearer", "existing": True}
+        virtual_id = "FG-" + secrets.token_hex(5).upper()
+        username = "user_" + secrets.token_hex(6)
+        cur = c.execute("""INSERT INTO users
+            (device_id, virtual_id, username, verified, token_hash, created_at)
+            VALUES (%s,%s,%s,1,NULL,%s)
+            ON CONFLICT (device_id) DO NOTHING
+            RETURNING id, virtual_id, banned""",
+            (device_id, virtual_id, username, now))
+        user = cur.fetchone()
+        if user is None:
+            user = c.execute(
+                "SELECT id, virtual_id, banned FROM users WHERE device_id=%s",
+                (device_id,)
+            ).fetchone()
+        if not user or user["banned"]:
+            raise HTTPException(403, "Device account unavailable")
+        token = issue_session(c, user["id"])
+    return {"ok": True, "virtual_id": user["virtual_id"],
+            "username": username, "access_token": token,
+            "token_type": "Bearer", "existing": False}
+
 
 @app.post("/v1/registrations")
 def register(data: Registration, x_bot_secret: str = Header(default="")):

@@ -63,6 +63,14 @@ def init_db():
             user_id BIGINT NOT NULL REFERENCES users(id), body TEXT NOT NULL,
             created_at TEXT NOT NULL)""")
         c.execute("CREATE INDEX IF NOT EXISTS messages_chat_id_idx ON messages(chat_id,id)")
+        c.execute("""CREATE TABLE IF NOT EXISTS stars_transactions (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            delta BIGINT NOT NULL CHECK(delta <> 0),
+            reason TEXT NOT NULL,
+            counterparty_username TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS stars_transactions_user_idx ON stars_transactions(user_id,id DESC)")
         c.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id BIGINT REFERENCES messages(id) ON DELETE SET NULL")
         c.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at TEXT")
         c.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at TEXT")
@@ -784,12 +792,14 @@ def buy_catalog_gift(data: GiftBuy, authorization: str = Header(default="")):
     user = authenticated_user(authorization)
     now = datetime.now(timezone.utc).isoformat()
     with connect() as c:
-        gift = c.execute("""SELECT id,price,is_collectible FROM gift_types
+        gift = c.execute("""SELECT id,price,is_collectible,title FROM gift_types
             WHERE code=%s AND active=1 FOR UPDATE""", (data.gift_code.lower(),)).fetchone()
         if not gift: raise HTTPException(404, "Gift not found")
         wallet = c.execute("SELECT stars FROM users WHERE id=%s FOR UPDATE", (user["id"],)).fetchone()
         if wallet["stars"] < gift["price"]: raise HTTPException(400, "Not enough Stars")
         c.execute("UPDATE users SET stars=stars-%s WHERE id=%s", (gift["price"],user["id"]))
+        c.execute("""INSERT INTO stars_transactions(user_id,delta,reason,created_at)
+            VALUES(%s,%s,%s,%s)""", (user["id"],-gift["price"],"Покупка подарка: "+gift["title"],datetime.now(timezone.utc).isoformat()))
         serial = ("FG-NFT-" + secrets.token_hex(5).upper()) if gift["is_collectible"] else None
         row = c.execute("""INSERT INTO user_gifts
             (gift_type_id,owner_user_id,sender_user_id,created_at,serial_number)
@@ -827,7 +837,7 @@ def send_gift(data: GiftSend, authorization: str = Header(default="")):
             raise HTTPException(404, "Recipient not found")
         if recipient["id"] == user["id"]:
             raise HTTPException(400, "You cannot send a gift to yourself")
-        gift = c.execute("SELECT id,price,is_collectible FROM gift_types WHERE code=%s AND active=1",
+        gift = c.execute("SELECT id,price,is_collectible,title FROM gift_types WHERE code=%s AND active=1",
                          (data.gift_code.lower(),)).fetchone()
         if not gift:
             raise HTTPException(404, "Gift not found")
@@ -843,6 +853,9 @@ def send_gift(data: GiftSend, authorization: str = Header(default="")):
         if balance < gift["price"]:
             raise HTTPException(400, "Not enough Stars")
         c.execute("UPDATE users SET stars=stars-%s WHERE id=%s", (gift["price"], user["id"]))
+        c.execute("""INSERT INTO stars_transactions(user_id,delta,reason,counterparty_username,created_at)
+            VALUES(%s,%s,%s,%s,%s)""",
+            (user["id"],-gift["price"],"Подарок: "+gift["title"],recipient["username"],datetime.now(timezone.utc).isoformat()))
         serial = ("FG-NFT-" + secrets.token_hex(5).upper()) if gift["is_collectible"] else None
         cur = c.execute("""INSERT INTO user_gifts(gift_type_id,owner_user_id,sender_user_id,chat_id,created_at,serial_number)
             VALUES(%s,%s,%s,%s,%s,%s) RETURNING id""",
@@ -856,7 +869,7 @@ def send_gift(data: GiftSend, authorization: str = Header(default="")):
 def upgrade_owned_gift(gift_id: int, authorization: str = Header(default="")):
     user = authenticated_user(authorization)
     with connect() as c:
-        gift = c.execute("""SELECT ug.id,ug.upgrade_level,gt.is_collectible
+        gift = c.execute("""SELECT ug.id,ug.upgrade_level,gt.is_collectible,gt.title
             FROM user_gifts ug JOIN gift_types gt ON gt.id=ug.gift_type_id
             WHERE ug.id=%s AND ug.owner_user_id=%s FOR UPDATE""",
             (gift_id,user["id"])).fetchone()
@@ -871,6 +884,9 @@ def upgrade_owned_gift(gift_id: int, authorization: str = Header(default="")):
         if gift["is_collectible"] and new_level >= 1:
             serial = "FG-NFT-" + secrets.token_hex(5).upper()
         c.execute("UPDATE users SET stars=stars-%s WHERE id=%s",(cost,user["id"]))
+        c.execute("""INSERT INTO stars_transactions(user_id,delta,reason,created_at)
+            VALUES(%s,%s,%s,%s)""",
+            (user["id"],-cost,"Улучшение подарка: "+gift["title"],datetime.now(timezone.utc).isoformat()))
         c.execute("""UPDATE user_gifts SET upgrade_level=%s,
             serial_number=COALESCE(serial_number,%s),
             attributes=jsonb_build_object('level',%s,'finish',CASE WHEN %s>=4 THEN 'legendary' WHEN %s>=2 THEN 'shimmer' ELSE 'classic' END)
@@ -928,10 +944,16 @@ def buy_market_gift(listing_id: int, authorization: str = Header(default="")):
         if listing["seller_user_id"]==buyer["id"]: raise HTTPException(400,"Cannot buy your own listing")
         wallet=c.execute("SELECT stars FROM users WHERE id=%s FOR UPDATE",(buyer["id"],)).fetchone()
         if wallet["stars"] < listing["price_stars"]: raise HTTPException(400,"Not enough Stars")
-        seller=c.execute("SELECT id FROM users WHERE id=%s",(listing["seller_user_id"],)).fetchone()
+        seller=c.execute("SELECT id,username FROM users WHERE id=%s",(listing["seller_user_id"],)).fetchone()
         if not seller: raise HTTPException(404,"Seller not found")
         c.execute("UPDATE users SET stars=stars-%s WHERE id=%s",(listing["price_stars"],buyer["id"]))
         c.execute("UPDATE users SET stars=stars+%s WHERE id=%s",(listing["price_stars"],listing["seller_user_id"]))
+        c.execute("""INSERT INTO stars_transactions(user_id,delta,reason,counterparty_username,created_at)
+            VALUES(%s,%s,%s,%s,%s)""",
+            (buyer["id"],-listing["price_stars"],"Покупка подарка на маркете",seller["username"] or "",now))
+        c.execute("""INSERT INTO stars_transactions(user_id,delta,reason,counterparty_username,created_at)
+            VALUES(%s,%s,%s,%s,%s)""",
+            (seller["id"],listing["price_stars"],"Продажа подарка на маркете",buyer.get("username") or "",now))
         moved=c.execute("""UPDATE user_gifts SET owner_user_id=%s,sender_user_id=%s,chat_id=NULL
             WHERE id=%s AND owner_user_id=%s RETURNING id""",
             (buyer["id"],listing["seller_user_id"],listing["gift_id"],listing["seller_user_id"])).fetchone()
@@ -939,6 +961,17 @@ def buy_market_gift(listing_id: int, authorization: str = Header(default="")):
         c.execute("DELETE FROM gift_market_listings WHERE id=%s",(listing_id,))
     return {"ok":True,"purchased":True,"gift_id":listing["gift_id"],
             "spent_stars":listing["price_stars"],"remaining_stars":wallet["stars"]-listing["price_stars"]}
+
+@app.get("/v1/stars/history")
+def stars_history(authorization: str = Header(default="")):
+    user = authenticated_user(authorization)
+    with connect() as c:
+        balance = c.execute("SELECT stars FROM users WHERE id=%s", (user["id"],)).fetchone()["stars"]
+        rows = c.execute("""SELECT delta,reason,counterparty_username,created_at
+            FROM stars_transactions WHERE user_id=%s ORDER BY id DESC LIMIT 50""",
+            (user["id"],)).fetchall()
+    return {"ok": True, "balance": balance, "transactions": rows}
+
 
 @app.get("/v1/owner/status")
 def owner_status(x_owner_secret: str = Header(default=""), authorization: str = Header(default="")):
@@ -1062,6 +1095,13 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default=""), au
             if not number:
                 raise HTTPException(503, "Could not allocate a virtual number")
             c.execute("UPDATE users SET virtual_number=%s WHERE id=%s", (number, user["id"]))
+        if data.action in ("stars_add", "stars_remove", "stars_set"):
+            after_stars = c.execute("SELECT stars FROM users WHERE id=%s", (user["id"],)).fetchone()["stars"]
+            delta = after_stars - user["stars"]
+            if delta:
+                c.execute("""INSERT INTO stars_transactions(user_id,delta,reason,created_at)
+                    VALUES(%s,%s,%s,%s)""",
+                    (user["id"],delta,"Изменение баланса владельцем",datetime.now(timezone.utc).isoformat()))
         result = c.execute("""SELECT virtual_id, verified, banned, stars, premium, label,
             nft_username, nft_rarity, virtual_number FROM users WHERE id=%s""", (user["id"],)).fetchone()
     return {"ok": True, "user": result}

@@ -123,7 +123,7 @@ public class FreeGramGift3DFragment extends BaseFragment {
             runAction(() -> {
                 FreeGramApi.request("DELETE", "/v1/shop/market/" + listingId, null, true);
                 return "Объявление снято с маркета";
-            }, "market");
+            }, "mine");
         }
         @JavascriptInterface public void openSection(String section) {
             if ("catalog".equals(section) || "market".equals(section) || "mine".equals(section)) loadSection(section);

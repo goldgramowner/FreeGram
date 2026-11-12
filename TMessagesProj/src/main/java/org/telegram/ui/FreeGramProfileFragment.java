@@ -83,7 +83,7 @@ public class FreeGramProfileFragment extends BaseFragment {
         giftsButton.setOnClickListener(v -> presentFragment(new FreeGramGift3DFragment(), true));
 
         Button settingsButton = new Button(context);
-        settingsButton.setText("Настройки Telegram");
+        settingsButton.setText("Настройки FreeGram");
         root.addView(settingsButton, new LinearLayout.LayoutParams(-1, dp(context, 50)));
         settingsButton.setOnClickListener(v -> presentFragment(new SettingsActivity(), true));
 

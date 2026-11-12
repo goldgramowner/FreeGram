@@ -195,7 +195,7 @@ public class FreeGramHomeFragment extends BaseFragment {
                         boolean verified = user.optInt("verified", 0) == 1;
                         String nft = user.optString("nft_username", "");
                         String line = (display.isEmpty() ? username : display + "  @" + username);
-                        if (!nft.isEmpty()) line += "  ◆ @" + nft + " · " + user.optString("nft_rarity", "common");
+                        if (!nft.isEmpty()) line += "  ◆ @" + nft;
                         if (verified) line += "  ✓";
                         if (!label.isEmpty()) line += " · " + label;
                         TextView row = makeRow(line, user.optString("bio", ""));
@@ -322,26 +322,21 @@ public class FreeGramHomeFragment extends BaseFragment {
     }
 
     private void openOwnerPanel() {
-        EditText secretInput = new EditText(getParentActivity());
-        secretInput.setSingleLine(true);
-        secretInput.setHint("Ключ владельца (OWNER_API_SECRET)");
-        secretInput.setInputType(129);
-        new AlertDialog.Builder(getParentActivity())
-            .setTitle("Защищённый доступ")
-            .setMessage("Ключ проверяется сервером. Он не вшит в APK и не сохраняется приложением.")
-            .setView(secretInput)
-            .setNegativeButton("Отмена", null)
-            .setPositiveButton("Открыть", (dialog, which) -> {
-                String secret = secretInput.getText().toString();
-                if (secret.trim().isEmpty()) return;
-                executor.execute(() -> {
-                    try {
-                        FreeGramApi.requestOwner("GET", "/v1/owner/status", null, secret);
-                        android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
-                        main.post(() -> presentFragment(new FreeGramOwnerFragment(secret), true));
-                    } catch (Exception e) { showError(e); }
-                });
-            }).show();
+        executor.execute(() -> {
+            try {
+                JSONObject access = FreeGramApi.request("GET", "/v1/owner/me", null, true);
+                if (!access.optBoolean("is_owner", false)) {
+                    android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                    main.post(() -> new AlertDialog.Builder(getParentActivity())
+                        .setTitle("Нет доступа")
+                        .setMessage("Панель владельца доступна только аккаунту, чей FreeGram ID назначен владельцем.")
+                        .setPositiveButton("ОК", null).show());
+                    return;
+                }
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                main.post(() -> presentFragment(new FreeGramOwnerFragment(), true));
+            } catch (Exception e) { showError(e); }
+        });
     }
 
     private void showProfile() {

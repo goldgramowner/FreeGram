@@ -163,7 +163,10 @@ public class FreeGramOwnerFragment extends BaseFragment {
             "Удалить виртуальный номер",
             "Назначить NFT username",
             "Снять NFT username",
-            "Установить метку"
+            "Установить метку",
+            "Выдать FreeGram Premium",
+            "Снять FreeGram Premium",
+            "Снять подтверждение"
         };
         new AlertDialog.Builder(getParentActivity()).setTitle(virtualId)
             .setItems(options, (dialog, which) -> {
@@ -177,7 +180,10 @@ public class FreeGramOwnerFragment extends BaseFragment {
                 else if (which == 7) performUserAction(virtualId, "number_remove", null);
                 else if (which == 8) askValue(virtualId, "nft_set", "NFT username без @", false);
                 else if (which == 9) performUserAction(virtualId, "nft_remove", null);
-                else askValue(virtualId, "label", "Метка аккаунта", false);
+                else if (which == 10) askValue(virtualId, "label", "Метка: owner / admin / moder / media / scam", false);
+                else if (which == 11) performUserAction(virtualId, "premium_on", null);
+                else if (which == 12) performUserAction(virtualId, "premium_off", null);
+                else performUserAction(virtualId, "unverify", null);
             }).show();
     }
 

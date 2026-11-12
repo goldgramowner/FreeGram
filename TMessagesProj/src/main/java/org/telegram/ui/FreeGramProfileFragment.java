@@ -74,6 +74,11 @@ public class FreeGramProfileFragment extends BaseFragment {
         root.addView(giftsButton, new LinearLayout.LayoutParams(-1, dp(context, 50)));
         giftsButton.setOnClickListener(v -> presentFragment(new FreeGramGift3DFragment(), true));
 
+        Button settingsButton = new Button(context);
+        settingsButton.setText("Настройки Telegram");
+        root.addView(settingsButton, new LinearLayout.LayoutParams(-1, dp(context, 50)));
+        settingsButton.setOnClickListener(v -> presentFragment(new SettingsActivity(), true));
+
         ownerPanelButton = new Button(context);
         ownerPanelButton.setText("Панель владельца");
         ownerPanelButton.setVisibility(View.GONE);
@@ -147,7 +152,7 @@ public class FreeGramProfileFragment extends BaseFragment {
                 displayName.setText(data.optString("display_name", ""));
                 bio.setText(data.optString("bio", ""));
                 avatar.setText(data.optString("avatar_url", ""));
-                identity.setText("FreeGram ID: " + data.optString("virtual_id", "—")
+                identity.setText((data.optInt("premium", 0) == 1 ? "FreeGram Premium ✓\\n" : "") + "FreeGram ID: " + data.optString("virtual_id", "—")
                     + "\nНомер: " + data.optString("virtual_number", "не назначен")
                     + "\nNFT username: " + (data.optString("nft_username", "").isEmpty() ? "нет" : "@" + data.optString("nft_username"))
                     + "\nСтатус: " + (data.optInt("verified") == 1 ? "✓ подтверждён" : "не подтверждён"));

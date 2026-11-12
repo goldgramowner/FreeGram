@@ -41,6 +41,7 @@ def init_db():
         for sql in [
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS banned INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS stars BIGINT NOT NULL DEFAULT 1000",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS premium INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS label TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS nft_username TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS nft_rarity TEXT NOT NULL DEFAULT ''",
@@ -486,7 +487,7 @@ def me(authorization: str = Header(default="")):
         raise HTTPException(401, "Authorization required")
     with connect() as c:
         user = c.execute("""SELECT virtual_id, username, telegram_id, verified, created_at,
-            banned, stars, label, nft_username, nft_rarity, virtual_number,
+            banned, stars, premium, label, nft_username, nft_rarity, virtual_number,
             display_name, bio, avatar_url
             FROM users WHERE token_hash=%s""", (digest(authorization[7:]),)).fetchone()
     if not user or not user["verified"] or user["banned"]:
@@ -992,7 +993,7 @@ def owner_users(x_owner_secret: str = Header(default=""), authorization: str = H
 def owner_action(data: OwnerAction, x_owner_secret: str = Header(default=""), authorization: str = Header(default="")):
     require_owner(x_owner_secret, authorization)
     actions = {"ban", "unban", "verify", "unverify", "stars_add", "stars_remove", "stars_set",
-               "label", "nft_set", "nft_remove", "number_set", "number_remove", "number_generate"}
+               "label", "nft_set", "nft_remove", "number_set", "number_remove", "number_generate", "premium_on", "premium_off"}
     if data.action not in actions:
         raise HTTPException(400, "Unknown action")
     with connect() as c:
@@ -1024,6 +1025,10 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default=""), au
                 c.execute("UPDATE users SET stars=GREATEST(0, stars - %s) WHERE id=%s", (amount, user["id"]))
             else:
                 c.execute("UPDATE users SET stars=%s WHERE id=%s", (amount, user["id"]))
+        elif data.action == "premium_on":
+            c.execute("UPDATE users SET premium=1 WHERE id=%s", (user["id"],))
+        elif data.action == "premium_off":
+            c.execute("UPDATE users SET premium=0 WHERE id=%s", (user["id"],))
         elif data.action == "label":
             label = str(data.value or "").strip()[:32]
             c.execute("UPDATE users SET label=%s WHERE id=%s", (label, user["id"]))
@@ -1057,7 +1062,7 @@ def owner_action(data: OwnerAction, x_owner_secret: str = Header(default=""), au
             if not number:
                 raise HTTPException(503, "Could not allocate a virtual number")
             c.execute("UPDATE users SET virtual_number=%s WHERE id=%s", (number, user["id"]))
-        result = c.execute("""SELECT virtual_id, verified, banned, stars, label,
+        result = c.execute("""SELECT virtual_id, verified, banned, stars, premium, label,
             nft_username, nft_rarity, virtual_number FROM users WHERE id=%s""", (user["id"],)).fetchone()
     return {"ok": True, "user": result}
 

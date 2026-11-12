@@ -5814,6 +5814,14 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
 
         @Override
         public void onNextPressed(String code) {
+            // FreeGram policy: registration is disabled; never submit auth.signUp or Firebase sign-up.
+            if (currentViewNum == VIEW_REGISTER) {
+                if (getParentActivity() != null) {
+                    android.widget.Toast.makeText(getParentActivity(), getString(R.string.FreeGramRegistrationDisabled), android.widget.Toast.LENGTH_LONG).show();
+                }
+                setPage(VIEW_PHONE_INPUT, false, null, true);
+                return;
+            }
             if (nextPressed) {
                 return;
             }

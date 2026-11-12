@@ -55,9 +55,12 @@ public class FreeGramHomeFragment extends BaseFragment {
         root.addView(header);
         profile.setOnClickListener(v -> showProfile());
         logout.setOnClickListener(v -> new AlertDialog.Builder(getParentActivity())
-            .setItems(new String[]{"Выйти из аккаунта"}, (d, which) -> {
-                FreeGramApi.clearToken();
-                presentFragment(new FreeGramAuthFragment(), true);
+            .setItems(new String[]{"Панель владельца", "Выйти из аккаунта"}, (d, which) -> {
+                if (which == 0) openOwnerPanel();
+                else {
+                    FreeGramApi.clearToken();
+                    presentFragment(new FreeGramAuthFragment(), true);
+                }
             }).show());
 
         LinearLayout actions = new LinearLayout(context);
@@ -316,6 +319,29 @@ public class FreeGramHomeFragment extends BaseFragment {
                 });
             } catch (Exception e) { showError(e); }
         });
+    }
+
+    private void openOwnerPanel() {
+        EditText secretInput = new EditText(getParentActivity());
+        secretInput.setSingleLine(true);
+        secretInput.setHint("Ключ владельца (OWNER_API_SECRET)");
+        secretInput.setInputType(129);
+        new AlertDialog.Builder(getParentActivity())
+            .setTitle("Защищённый доступ")
+            .setMessage("Ключ проверяется сервером. Он не вшит в APK и не сохраняется приложением.")
+            .setView(secretInput)
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Открыть", (dialog, which) -> {
+                String secret = secretInput.getText().toString();
+                if (secret.trim().isEmpty()) return;
+                executor.execute(() -> {
+                    try {
+                        FreeGramApi.requestOwner("GET", "/v1/owner/status", null, secret);
+                        android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                        main.post(() -> presentFragment(new FreeGramOwnerFragment(secret), true));
+                    } catch (Exception e) { showError(e); }
+                });
+            }).show();
     }
 
     private void showProfile() {

@@ -14,6 +14,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 BOT_SECRET = os.getenv("BOT_API_SECRET", "")
 OWNER_SECRET = os.getenv("OWNER_API_SECRET", "")
 OWNER_FREEGRAM_ID = os.getenv("OWNER_FREEGRAM_ID", "").strip().upper()
+OWNER_FREEGRAM_USERNAME = os.getenv("OWNER_FREEGRAM_USERNAME", "").strip().lstrip("@").lower()
 
 def connect():
     if not DATABASE_URL:
@@ -235,11 +236,14 @@ def require_bot(secret):
 def require_owner(secret, authorization=""):
     if OWNER_SECRET and secrets.compare_digest(secret or "", OWNER_SECRET):
         return True
-    if authorization.startswith("Bearer ") and OWNER_FREEGRAM_ID:
+    if authorization.startswith("Bearer ") and (OWNER_FREEGRAM_ID or OWNER_FREEGRAM_USERNAME):
         with connect() as c:
             owner = c.execute(
-                "SELECT id FROM users WHERE token_hash=%s AND UPPER(virtual_id)=%s AND verified=1 AND banned=0",
-                (digest(authorization[7:]), OWNER_FREEGRAM_ID)
+                """SELECT id FROM users WHERE token_hash=%s AND verified=1 AND banned=0
+                   AND ((%s <> '' AND UPPER(virtual_id)=%s)
+                     OR (%s <> '' AND LOWER(COALESCE(username,''))=%s))""",
+                (digest(authorization[7:]), OWNER_FREEGRAM_ID, OWNER_FREEGRAM_ID,
+                 OWNER_FREEGRAM_USERNAME, OWNER_FREEGRAM_USERNAME)
             ).fetchone()
         if owner:
             return True
@@ -503,8 +507,12 @@ def authenticated_user(authorization):
 @app.get("/v1/owner/me")
 def owner_me(authorization: str = Header(default="")):
     user = authenticated_user(authorization)
-    is_owner = bool(OWNER_FREEGRAM_ID and user["virtual_id"].upper() == OWNER_FREEGRAM_ID)
-    return {"ok": True, "is_owner": is_owner, "virtual_id": user["virtual_id"]}
+    is_owner = bool(
+        (OWNER_FREEGRAM_ID and user["virtual_id"].upper() == OWNER_FREEGRAM_ID)
+        or (OWNER_FREEGRAM_USERNAME and (user.get("username") or "").lower() == OWNER_FREEGRAM_USERNAME)
+    )
+    return {"ok": True, "is_owner": is_owner, "virtual_id": user["virtual_id"],
+            "username": user.get("username") or ""}
 
 @app.get("/v1/chats")
 def list_chats(authorization: str = Header(default="")):

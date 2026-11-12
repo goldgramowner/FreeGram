@@ -25,6 +25,7 @@ public class FreeGramProfileFragment extends BaseFragment {
     private final Handler main = new Handler(Looper.getMainLooper());
     private EditText username, displayName, bio, avatar;
     private TextView status, identity;
+    private Button ownerPanelButton;
     private boolean loading;
 
     @Override
@@ -63,6 +64,12 @@ public class FreeGramProfileFragment extends BaseFragment {
         root.addView(save, new LinearLayout.LayoutParams(-1, dp(context, 52)));
         save.setOnClickListener(v -> saveProfile());
 
+        ownerPanelButton = new Button(context);
+        ownerPanelButton.setText("Панель владельца");
+        ownerPanelButton.setVisibility(View.GONE);
+        root.addView(ownerPanelButton, new LinearLayout.LayoutParams(-1, dp(context, 52)));
+        ownerPanelButton.setOnClickListener(v -> presentFragment(new FreeGramOwnerFragment()));
+
         status = new TextView(context);
         status.setTextColor(Color.rgb(80, 98, 124));
         status.setPadding(0, dp(context, 12), 0, 0);
@@ -70,6 +77,7 @@ public class FreeGramProfileFragment extends BaseFragment {
         scroll.addView(root);
         fragmentView = scroll;
         loadProfile();
+        checkOwnerAccess();
         return fragmentView;
     }
 
@@ -89,6 +97,22 @@ public class FreeGramProfileFragment extends BaseFragment {
 
     private static int dp(Context c, float value) {
         return (int) (value * c.getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private void checkOwnerAccess() {
+        executor.execute(() -> {
+            boolean allowed = false;
+            try {
+                if (FreeGramApi.ensureDeviceSession()) {
+                    JSONObject result = FreeGramApi.request("GET", "/v1/owner/me", null, true);
+                    allowed = result.optBoolean("is_owner", false);
+                }
+            } catch (Exception ignored) { }
+            final boolean show = allowed;
+            main.post(() -> {
+                if (ownerPanelButton != null) ownerPanelButton.setVisibility(show ? View.VISIBLE : View.GONE);
+            });
+        });
     }
 
     private void loadProfile() {
@@ -168,6 +192,7 @@ public class FreeGramProfileFragment extends BaseFragment {
         avatar = null;
         status = null;
         identity = null;
+        ownerPanelButton = null;
         super.onFragmentDestroy();
     }
 }

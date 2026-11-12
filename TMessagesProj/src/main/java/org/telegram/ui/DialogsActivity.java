@@ -6337,6 +6337,57 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
+    private void showFreeGramCreateChatDialog() {
+        final Activity activity = getParentActivity();
+        if (activity == null) return;
+        new android.app.AlertDialog.Builder(activity)
+            .setTitle("Создать в FreeGram")
+            .setItems(new String[] {"Группу", "Канал"}, (dialog, which) -> {
+                final String kind = which == 0 ? "group" : "channel";
+                final EditText input = new EditText(activity);
+                input.setSingleLine(true);
+                input.setHint("Название " + (which == 0 ? "группы" : "канала"));
+                new android.app.AlertDialog.Builder(activity)
+                    .setTitle("Название")
+                    .setView(input)
+                    .setNegativeButton("Отмена", null)
+                    .setPositiveButton("Создать", (d, w) -> {
+                        final String title = input.getText().toString().trim();
+                        if (title.isEmpty()) {
+                            Toast.makeText(activity, "Укажи название", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        new Thread(() -> {
+                            long chatId = 0;
+                            String error = null;
+                            try {
+                                if (!FreeGramApi.ensureDeviceSession()) {
+                                    throw new Exception("Не удалось подключиться к FreeGram");
+                                }
+                                org.json.JSONObject body = new org.json.JSONObject();
+                                body.put("kind", kind);
+                                body.put("title", title);
+                                org.json.JSONObject result = FreeGramApi.request("POST", "/v1/chats", body, true);
+                                chatId = result.optLong("chat_id", 0);
+                                if (chatId <= 0) throw new Exception("Сервер не вернул ID чата");
+                            } catch (Exception e) {
+                                error = e.getMessage() == null ? "Не удалось создать чат" : e.getMessage();
+                            }
+                            final long createdId = chatId;
+                            final String failure = error;
+                            AndroidUtilities.runOnUIThread(() -> {
+                                if (getParentActivity() == null) return;
+                                if (createdId > 0) {
+                                    presentFragment(new FreeGramChatFragment(createdId, title), true);
+                                } else {
+                                    Toast.makeText(getParentActivity(), failure, Toast.LENGTH_LONG).show();
+                                }
+                            });
+                        }, "freegram-create-chat").start();
+                    }).show();
+            }).setNegativeButton("Отмена", null).show();
+    }
+
     private void createGroupForThis() {
         AlertDialog progress = new AlertDialog(getContext(), AlertDialog.ALERT_TYPE_SPINNER);
         if (requestPeerType instanceof TLRPC.TL_requestPeerTypeBroadcast) {
@@ -13416,9 +13467,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             });
         });
         io.addGap();
-        io.add(R.drawable.outline_groups_24, getString(R.string.NewGroup), () -> {
-            Bundle args = new Bundle();
-            presentFragment(new GroupCreateActivity(args));
+        io.add(R.drawable.outline_groups_24, "Создать группу или канал", () -> {
+            showFreeGramCreateChatDialog();
         });
         io.add(R.drawable.outline_saved_24, getString(R.string.SavedMessages), () -> {
             Bundle args = new Bundle();

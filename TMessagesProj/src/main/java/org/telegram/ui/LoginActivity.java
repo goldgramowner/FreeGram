@@ -2600,9 +2600,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                 codeField.requestFocus();
             }
 
-            loadCountries();
-        }
-
+            if (!freegramLoginMode) loadCountries();
 
             // FreeGram uses the existing native Telegram-styled login components.
             if (activityMode == MODE_LOGIN) {
@@ -2649,7 +2647,10 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             }
         }
 
+        }
+
         private void loadCountries() {
+            if (freegramLoginMode) return;
             TLRPC.TL_help_getCountriesList req = new TLRPC.TL_help_getCountriesList();
             req.lang_code = LocaleController.getInstance().getCurrentLocaleInfo() != null ? LocaleController.getInstance().getCurrentLocaleInfo().getLangCode() : Locale.getDefault().getCountry();
             getConnectionsManager().sendRequest(req, (response, error) -> {

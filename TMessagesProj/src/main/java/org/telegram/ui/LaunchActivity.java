@@ -419,7 +419,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         ApplicationLoader.postInitApplication();
         AndroidUtilities.checkDisplaySize(this, getResources().getConfiguration());
         currentAccount = UserConfig.selectedAccount;
-        new Thread(() -> FreeGramApi.ensureDeviceSession(), "freegram-device-session").start();
+        FreeGramApi.init(this);
         if (BuildVars.DEBUG_VERSION || BuildVars.DEBUG_PRIVATE_VERSION) {
             registerDebugThemeReceiver();
         }

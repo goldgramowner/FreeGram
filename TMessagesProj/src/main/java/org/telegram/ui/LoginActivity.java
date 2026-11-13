@@ -2647,8 +2647,6 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             }
         }
 
-        }
-
         private void loadCountries() {
             if (freegramLoginMode) return;
             TLRPC.TL_help_getCountriesList req = new TLRPC.TL_help_getCountriesList();

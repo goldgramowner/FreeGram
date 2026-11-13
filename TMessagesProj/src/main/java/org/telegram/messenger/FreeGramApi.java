@@ -73,6 +73,19 @@ public final class FreeGramApi {
         return getMe(context);
     }
 
+    /**
+     * Shared REST entry point for Telegram UI fragments.
+     * It deliberately reuses the exact encrypted session created by FreeGramLoginActivity.
+     */
+    public static JSONObject requestApi(Context context, String method, String path,
+                                        JSONObject body, boolean authenticated) throws Exception {
+        String token = authenticated ? getToken(context) : null;
+        if (authenticated && (token == null || token.isEmpty())) {
+            throw new Exception("Сессия FreeGram не найдена. Перезайди через регистрацию.");
+        }
+        return request(method, path, body, token);
+    }
+
     public static JSONObject searchUsers(Context context, String query) throws Exception {
         return request("GET", "/v1/users/search?q=" + encode(query), null, getToken(context));
     }

@@ -133,38 +133,57 @@ public final class FreeGramApi {
 
     private static JSONObject request(String method, String path, JSONObject body, String token) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(BASE_URL + path).openConnection();
-        connection.setRequestMethod(method);
-        connection.setConnectTimeout(15000);
-        connection.setReadTimeout(20000);
-        connection.setRequestProperty("Accept", "application/json");
-        if (token != null && !token.isEmpty()) {
-            connection.setRequestProperty("Authorization", "Bearer " + token);
-        }
-        if (body != null) {
-            connection.setDoOutput(true);
-            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            try (OutputStream output = connection.getOutputStream()) {
-                output.write(body.toString().getBytes(StandardCharsets.UTF_8));
+        try {
+            connection.setRequestMethod(method);
+            connection.setConnectTimeout(15000);
+            connection.setReadTimeout(20000);
+            connection.setUseCaches(false);
+            connection.setInstanceFollowRedirects(true);
+            connection.setRequestProperty("Accept", "application/json");
+            if (token != null && !token.isEmpty()) {
+                connection.setRequestProperty("Authorization", "Bearer " + token);
             }
+            if (body != null) {
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
+                connection.setFixedLengthStreamingMode(payload.length);
+                try (OutputStream output = connection.getOutputStream()) {
+                    output.write(payload);
+                    output.flush();
+                }
+            }
+
+            int status = connection.getResponseCode();
+            InputStream stream = status >= 200 && status < 300
+                    ? connection.getInputStream() : connection.getErrorStream();
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            if (stream != null) {
+                try (InputStream input = stream) {
+                    byte[] buffer = new byte[4096];
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        bytes.write(buffer, 0, count);
+                    }
+                }
+            }
+
+            String responseText = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+            JSONObject result;
+            try {
+                result = responseText.isEmpty() ? new JSONObject() : new JSONObject(responseText);
+            } catch (org.json.JSONException parseError) {
+                throw new Exception("Сервер вернул некорректный ответ (HTTP " + status + ")", parseError);
+            }
+            if (status < 200 || status >= 300) {
+                String detail = result.optString("detail", "");
+                if (detail.isEmpty()) detail = "HTTP " + status;
+                throw new Exception(detail);
+            }
+            return result;
+        } finally {
+            connection.disconnect();
         }
-        int status = connection.getResponseCode();
-        InputStream stream = status >= 200 && status < 300
-                ? connection.getInputStream() : connection.getErrorStream();
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        if (stream != null) {
-            byte[] buffer = new byte[4096];
-            int count;
-            while ((count = stream.read(buffer)) != -1) bytes.write(buffer, 0, count);
-            stream.close();
-        }
-        connection.disconnect();
-        String responseText = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
-        JSONObject result = responseText.isEmpty() ? new JSONObject() : new JSONObject(responseText);
-        if (status < 200 || status >= 300) {
-            String detail = result.optString("detail", "HTTP " + status);
-            throw new Exception(detail);
-        }
-        return result;
     }
 
     private static void saveToken(Context context, String token) throws Exception {

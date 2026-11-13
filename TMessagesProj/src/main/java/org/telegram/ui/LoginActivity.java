@@ -132,6 +132,7 @@ import org.telegram.messenger.CallReceiver;
 import org.telegram.messenger.ContactsController;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.FreeGramApi;
 import org.telegram.messenger.FirebasePhoneNumberVerificationHelper;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.LocaleController;
@@ -2001,6 +2002,9 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
     public class PhoneView extends SlideView implements AdapterView.OnItemSelectedListener, NotificationCenter.NotificationCenterDelegate {
         private AnimatedPhoneNumberEditText codeField;
         private AnimatedPhoneNumberEditText phoneField;
+        private EditTextBoldCursor freegramIdField;
+        private EditTextBoldCursor freegramOtpField;
+        private boolean freegramLoginMode = true;
         private TextView titleView;
         private TextViewSwitcher countryButton;
         private OutlineTextContainerView countryOutlineView;
@@ -2627,6 +2631,52 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             loadCountries();
         }
 
+
+            // FreeGram uses the existing native Telegram-styled login components.
+            if (activityMode == MODE_LOGIN) {
+                freegramLoginMode = true;
+                titleView.setText("Вход в FreeGram");
+                subtitleView.setText("Введите FreeGram ID и код из личного чата FreeGram Auth Bot");
+
+                countryOutlineView.setVisibility(GONE);
+                phoneOutlineView.setVisibility(GONE);
+
+                OutlineTextContainerView idContainer = new OutlineTextContainerView(context);
+                idContainer.setText("FreeGram ID");
+                freegramIdField = new EditTextBoldCursor(context);
+                freegramIdField.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+                freegramIdField.setSingleLine(true);
+                freegramIdField.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+                freegramIdField.setImeOptions(EditorInfo.IME_ACTION_NEXT | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+                freegramIdField.setHint("FG-XXXXXXXX");
+                freegramIdField.setBackground(null);
+                idContainer.addView(freegramIdField, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 42, Gravity.CENTER_VERTICAL, 16, 8, 16, 8));
+
+                OutlineTextContainerView otpContainer = new OutlineTextContainerView(context);
+                otpContainer.setText("Код из бота");
+                freegramOtpField = new EditTextBoldCursor(context);
+                freegramOtpField.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+                freegramOtpField.setSingleLine(true);
+                freegramOtpField.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+                freegramOtpField.setImeOptions(EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+                freegramOtpField.setHint("6 цифр");
+                freegramOtpField.setBackground(null);
+                otpContainer.addView(freegramOtpField, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 42, Gravity.CENTER_VERTICAL, 16, 8, 16, 8));
+
+                int insertAt = Math.max(0, indexOfChild(countryOutlineView));
+                addView(idContainer, insertAt, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 58, 16, 24, 16, 8));
+                addView(otpContainer, insertAt + 1, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 58, 16, 8, 16, 8));
+                freegramIdField.setOnEditorActionListener((v, actionId, event) -> {
+                    freegramOtpField.requestFocus();
+                    return true;
+                });
+                freegramOtpField.setOnEditorActionListener((v, actionId, event) -> {
+                    onNextPressed("");
+                    return true;
+                });
+            }
+        }
+
         private void loadCountries() {
             TLRPC.TL_help_getCountriesList req = new TLRPC.TL_help_getCountriesList();
             req.lang_code = LocaleController.getInstance().getCurrentLocaleInfo() != null ? LocaleController.getInstance().getCurrentLocaleInfo().getLangCode() : Locale.getDefault().getCountry();
@@ -2902,6 +2952,41 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
 
         @Override
         public void onNextPressed(String code) {
+            if (freegramLoginMode && activityMode == MODE_LOGIN) {
+                if (getParentActivity() == null || nextPressed) return;
+                String virtualId = freegramIdField == null ? "" : freegramIdField.getText().toString().trim();
+                String otp = freegramOtpField == null ? "" : freegramOtpField.getText().toString().trim();
+                if (virtualId.isEmpty() || otp.length() != 6) {
+                    Toast.makeText(getContext(), "Введите FreeGram ID и шестизначный код", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                nextPressed = true;
+                needShowProgress(0, false);
+                new Thread(() -> {
+                    String errorText = null;
+                    boolean verified = false;
+                    try {
+                        FreeGramApi.verifyCode(ApplicationLoader.applicationContext, virtualId, otp);
+                        FreeGramApi.getMe(ApplicationLoader.applicationContext);
+                        verified = true;
+                    } catch (Exception e) {
+                        errorText = e.getMessage() == null ? "Не удалось выполнить вход" : e.getMessage();
+                        FileLog.e(e);
+                    }
+                    final boolean success = verified;
+                    final String error = errorText;
+                    AndroidUtilities.runOnUIThread(() -> {
+                        nextPressed = false;
+                        needHideProgress(false);
+                        if (success) {
+                            Toast.makeText(getContext(), "FreeGram ID подтверждён. Авторизация сохранена.", Toast.LENGTH_LONG).show();
+                        } else {
+                            Toast.makeText(getContext(), error, Toast.LENGTH_LONG).show();
+                        }
+                    });
+                }, "freegram-auth").start();
+                return;
+            }
             if (getParentActivity() == null || nextPressed || isRequestingFirebaseSms) {
                 return;
             }
@@ -3415,6 +3500,15 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
         @Override
         public void onShow() {
             super.onShow();
+            if (freegramLoginMode && activityMode == MODE_LOGIN) {
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (freegramIdField != null) {
+                        freegramIdField.requestFocus();
+                        AndroidUtilities.showKeyboard(freegramIdField);
+                    }
+                }, SHOW_DELAY);
+                return;
+            }
             fillNumber();
             if (syncContactsBox != null) {
                 syncContactsBox.setChecked(syncContacts, false);

@@ -421,6 +421,13 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         AndroidUtilities.checkDisplaySize(this, getResources().getConfiguration());
         currentAccount = UserConfig.selectedAccount;
         FreeGramApi.init(this);
+        // FreeGram is the sole account provider; never fall through to Telegram phone login.
+        if (!FreeGramApi.hasSession(this)) {
+            super.onCreate(savedInstanceState);
+            startActivity(new Intent(this, FreeGramLoginActivity.class));
+            finish();
+            return;
+        }
         if (BuildVars.DEBUG_VERSION || BuildVars.DEBUG_PRIVATE_VERSION) {
             registerDebugThemeReceiver();
         }

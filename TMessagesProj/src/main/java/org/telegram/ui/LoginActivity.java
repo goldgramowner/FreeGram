@@ -2004,7 +2004,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
         private AnimatedPhoneNumberEditText phoneField;
         private EditTextBoldCursor freegramIdField;
         private EditTextBoldCursor freegramOtpField;
-        private boolean freegramLoginMode = true;
+        private boolean freegramLoginMode = false;
         private TextView titleView;
         private TextViewSwitcher countryButton;
         private OutlineTextContainerView countryOutlineView;
@@ -2590,37 +2590,8 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
 
             Collections.sort(countriesArray, Comparator.comparing(o -> o.name));
 
-            String country = null;
-
-            try {
-                TelephonyManager telephonyManager = (TelephonyManager) ApplicationLoader.applicationContext.getSystemService(Context.TELEPHONY_SERVICE);
-                if (telephonyManager != null) {
-                    country = null;//telephonyManager.getSimCountryIso().toUpperCase();
-                }
-            } catch (Exception e) {
-                FileLog.e(e);
-            }
-
-            if (country != null) {
-                setCountry(languageMap, country.toUpperCase());
-            } else {
-                TLRPC.TL_help_getNearestDc req = new TLRPC.TL_help_getNearestDc();
-                getAccountInstance().getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-                    if (response == null) {
-                        return;
-                    }
-                    TLRPC.TL_nearestDc res = (TLRPC.TL_nearestDc) response;
-                    if (codeField.length() == 0) {
-                        setCountry(languageMap, res.country.toUpperCase());
-                    }
-                }), ConnectionsManager.RequestFlagWithoutLogin | ConnectionsManager.RequestFlagFailOnServerErrors);
-            }
-            if (codeField.length() == 0) {
-                setCountryButtonText(null);
-                phoneField.setHintText(null);
-                countryState = COUNTRY_STATE_EMPTY;
-            }
-
+            // Country and nearest-DC discovery are Telegram login operations.
+            // FreeGram login does not use Telegram phone authentication.
             if (codeField.length() != 0) {
                 phoneField.requestFocus();
                 phoneField.setSelection(phoneField.length());

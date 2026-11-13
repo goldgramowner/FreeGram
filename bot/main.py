@@ -91,13 +91,34 @@ async def owner_chat_action(chat_id, action, value=None):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or update.effective_chat.type != "private":
+        return
     if is_owner(update):
         await update.message.reply_text(
             "🔐 FreeGram Owner Panel",
             reply_markup=owner_keyboard())
-    else:
+        return
+
+    try:
+        result = await asyncio.to_thread(
+            api_request, "/v1/registrations", "POST",
+            {"telegram_id": update.effective_user.id}, "bot"
+        )
         await update.message.reply_text(
-            "FreeGram Bot\nАккаунт теперь создаётся автоматически при первом запуске приложения.\nПанель влась выдать код: {str(e)[:180]}")
+            "🔐 Регистрация FreeGram\n\n"
+            f'Ваш FreeGram ID: {result["virtual_id"]}\n'
+            f'Ваш внутренний номер: {result.get("virtual_number") or "назначается"}\n\n'
+            f'Код входа: {result["code"]}\n'
+            "Код действует 10 минут. Введите FreeGram ID и код в приложении.\n\n"
+            "Чтобы получить новый код, отправьте /start ещё раз. "
+            "Никому не пересылайте код."
+        )
+    except Exception as e:
+        log.exception("FreeGram registration/code issue failed")
+        await update.message.reply_text(
+            "❌ Не удалось выдать код FreeGram. Попробуйте позже. "
+            f"Причина: {str(e)[:180]}"
+        )
 
 
 async def owner(update: Update, context: ContextTypes.DEFAULT_TYPE):

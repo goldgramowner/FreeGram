@@ -27,3 +27,22 @@ services:
         sync: false
       - key: OWNER_FREEGRAM_USERNAME
         sync: false
+  - type: web
+    name: freegram-auth-bot
+    runtime: python
+    plan: starter
+    region: frankfurt
+    buildCommand: pip install -r bot/requirements.txt
+    startCommand: python bot/main.py
+    healthCheckPath: /health
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: OWNER_TELEGRAM_ID
+        sync: false
+      - key: AUTH_API_URL
+        value: https://freegram-x.onrender.com
+      - key: BOT_API_SECRET
+        sync: false
+      - key: OWNER_API_SECRET
+        sync: false

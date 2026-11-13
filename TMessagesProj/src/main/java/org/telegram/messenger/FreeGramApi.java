@@ -13,6 +13,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import javax.crypto.Cipher;
@@ -65,6 +66,60 @@ public final class FreeGramApi {
         JSONObject body = new JSONObject();
         body.put("text", message == null ? "" : message);
         return request("POST", "/v1/chats/" + chatId + "/messages", body, getToken(context));
+    }
+
+    public static JSONObject validateSession(Context context) throws Exception {
+        if (!hasSession(context)) throw new Exception("No saved FreeGram session");
+        return getMe(context);
+    }
+
+    public static JSONObject searchUsers(Context context, String query) throws Exception {
+        return request("GET", "/v1/users/search?q=" + encode(query), null, getToken(context));
+    }
+
+    public static JSONObject getUserProfile(Context context, String username) throws Exception {
+        return request("GET", "/v1/users/" + encode(username), null, getToken(context));
+    }
+
+    public static JSONObject createChat(Context context, String kind, String title, String username) throws Exception {
+        JSONObject body = new JSONObject();
+        body.put("kind", kind == null ? "direct" : kind);
+        if (title != null) body.put("title", title);
+        if (username != null) body.put("username", username);
+        return request("POST", "/v1/chats", body, getToken(context));
+    }
+
+    public static JSONObject searchChats(Context context, String query) throws Exception {
+        return request("GET", "/v1/chats/search?q=" + encode(query), null, getToken(context));
+    }
+
+    public static JSONObject joinChat(Context context, long chatId) throws Exception {
+        return request("POST", "/v1/chats/" + chatId + "/join", new JSONObject(), getToken(context));
+    }
+
+    public static JSONObject joinInvite(Context context, String inviteCode) throws Exception {
+        return request("POST", "/v1/invites/" + encode(inviteCode) + "/join", new JSONObject(), getToken(context));
+    }
+
+    public static JSONObject updateProfile(Context context, String username, String displayName, String bio, String avatarUrl) throws Exception {
+        JSONObject body = new JSONObject();
+        if (username != null) body.put("username", username);
+        if (displayName != null) body.put("display_name", displayName);
+        if (bio != null) body.put("bio", bio);
+        if (avatarUrl != null) body.put("avatar_url", avatarUrl);
+        return request("PATCH", "/v1/me", body, getToken(context));
+    }
+
+    public static JSONObject updateChat(Context context, long chatId, String title, String description, String coverUrl) throws Exception {
+        JSONObject body = new JSONObject();
+        if (title != null) body.put("title", title);
+        if (description != null) body.put("description", description);
+        if (coverUrl != null) body.put("cover_url", coverUrl);
+        return request("PATCH", "/v1/chats/" + chatId, body, getToken(context));
+    }
+
+    private static String encode(String value) throws Exception {
+        return URLEncoder.encode(value == null ? "" : value, "UTF-8");
     }
 
     public static void logout(Context context) {

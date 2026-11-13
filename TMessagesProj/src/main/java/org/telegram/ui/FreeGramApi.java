@@ -1,121 +1,39 @@
 package org.telegram.ui;
 
 import android.content.Context;
-import android.content.SharedPreferences;
-import android.provider.Settings;
-import java.util.UUID;
-
-import org.telegram.messenger.ApplicationLoader;
 
 import org.json.JSONObject;
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
+import org.telegram.messenger.ApplicationLoader;
 
+/**
+ * Compatibility facade for older FreeGram UI fragments.
+ * All screens now use the same encrypted session created by FreeGramLoginActivity.
+ */
 public final class FreeGramApi {
-    public static final String BASE = "https://freegram-x.onrender.com";
-    private static final String PREFS = "freegram_session";
-    private static final String TOKEN = "access_token";
+    public static final String BASE = org.telegram.messenger.FreeGramApi.BASE_URL;
 
     private FreeGramApi() {}
 
-    private static SharedPreferences prefs() {
-        Context c = ApplicationLoader.applicationContext;
-        return c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    private static Context context() {
+        return ApplicationLoader.applicationContext;
     }
-
-    public static boolean hasSession() {
-        return !prefs().getString(TOKEN, "").isEmpty();
-    }
-
-    public static String token() {
-        return prefs().getString(TOKEN, "");
-    }
-
-    public static void saveToken(String token) {
-        prefs().edit().putString(TOKEN, token).apply();
-    }
-
-    public static void clearToken() {
-        prefs().edit().remove(TOKEN).apply();
-    }
-
-    public static String deviceId() {
-        SharedPreferences p = prefs();
-        String saved = p.getString("device_id", "");
-        if (!saved.isEmpty()) return saved;
-        Context context = ApplicationLoader.applicationContext;
-        String androidId = Settings.Secure.getString(
-                context.getContentResolver(), Settings.Secure.ANDROID_ID);
-        if (androidId == null || androidId.trim().isEmpty()
-                || "9774d56d682e549c".equalsIgnoreCase(androidId)) {
-            androidId = UUID.randomUUID().toString().replace("-", "");
-        }
-        p.edit().putString("device_id", androidId).apply();
-        return androidId;
-    }
-
 
     public static boolean ensureDeviceSession() {
         try {
-            if (hasSession()) {
-                try {
-                    request("GET", "/v1/me", null, true);
-                    return true;
-                } catch (Exception invalidSession) {
-                    clearToken();
-                }
-            }
-            JSONObject body = new JSONObject();
-            body.put("device_id", deviceId());
-            JSONObject result = request("POST", "/v1/auth/device", body, false);
-            String accessToken = result.optString("access_token", "");
-            if (accessToken.isEmpty()) return false;
-            saveToken(accessToken);
-            request("GET", "/v1/me", null, true);
+            Context context = context();
+            if (context == null) return false;
+            org.telegram.messenger.FreeGramApi.validateSession(context);
             return true;
-        } catch (Exception error) {
+        } catch (Exception ignored) {
             return false;
         }
     }
 
-    public static JSONObject requestOwner(String method, String path, JSONObject body, String ownerSecret) throws Exception {
-        return requestInternal(method, path, body, false, ownerSecret);
-    }
-
-    public static JSONObject request(String method, String path, JSONObject body, boolean authenticated) throws Exception {
-        return requestInternal(method, path, body, authenticated, null);
-    }
-
-    private static JSONObject requestInternal(String method, String path, JSONObject body, boolean authenticated, String ownerSecret) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(BASE + path).openConnection();
-        connection.setRequestMethod(method);
-        connection.setConnectTimeout(15000);
-        connection.setReadTimeout(20000);
-        connection.setRequestProperty("Accept", "application/json");
-        if (body != null) {
-            connection.setDoOutput(true);
-            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
-            try (OutputStream out = connection.getOutputStream()) { out.write(bytes); }
-        }
-        if (authenticated) connection.setRequestProperty("Authorization", "Bearer " + token());
-        if (ownerSecret != null) connection.setRequestProperty("X-Owner-Secret", ownerSecret);
-        int code = connection.getResponseCode();
-        InputStream stream = code >= 200 && code < 400 ? connection.getInputStream() : connection.getErrorStream();
-        StringBuilder result = new StringBuilder();
-        if (stream != null) {
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-                String line; while ((line = reader.readLine()) != null) result.append(line);
-            }
-        }
-        connection.disconnect();
-        JSONObject json = new JSONObject(result.toString().isEmpty() ? "{}" : result.toString());
-        if (code < 200 || code >= 300) throw new Exception(json.optString("detail", "FreeGram API error " + code));
-        return json;
+    public static JSONObject request(String method, String path, JSONObject body,
+                                     boolean authenticated) throws Exception {
+        Context context = context();
+        if (context == null) throw new Exception("FreeGram ещё не инициализирован");
+        return org.telegram.messenger.FreeGramApi.requestApi(
+                context, method, path, body, authenticated);
     }
 }

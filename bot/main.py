@@ -46,7 +46,7 @@ def api_request(path, method="GET", data=None, secret_name=None):
     req = urllib.request.Request(AUTH_API_URL + path, data=body,
                                  headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=25) as response:
+        with urllib.request.urlopen(req, timeout=120) as response:
             return json.loads(response.read().decode())
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"API HTTP {e.code}: {e.read().decode()}")

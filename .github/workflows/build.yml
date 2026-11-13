@@ -12,6 +12,7 @@ on:
       - freegram/build-143-owner-panel
       - freegram/build-143-owner-id
       - freegram/mechagram-style-fork
+      - freegram/native-api-auth
 
 permissions:
   contents: read

@@ -1,4 +1,4 @@
-name: FreeGram Combined APK
+name: FreeGram Android APK
 
 on:
   workflow_dispatch:
@@ -12,6 +12,9 @@ on:
       - freegram/build-143-owner-panel
       - freegram/build-143-owner-id
       - freegram/mechagram-style-fork
+
+permissions:
+  contents: read
 
 concurrency:
   group: freegram-apk-${{ github.ref }}

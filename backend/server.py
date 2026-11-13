@@ -244,6 +244,55 @@ def init_db():
             c.execute("""INSERT INTO gift_types(code,title,description,price,rarity,is_collectible,collection_name)
                 VALUES(%s,%s,%s,%s,%s,1,%s) ON CONFLICT(code) DO NOTHING""", gift)
 
+        # Curated Telegram collectible gift set (25 collections).
+        # Previews are Telegram-style Lottie renders hosted by the public changes.tg asset index.
+        popular_telegram_gifts = [
+            ("plush_pepe", "Plush Pepe", 900, "legendary", "Plush%20Pepe"),
+            ("scared_cat", "Scared Cat", 650, "epic", "Scared%20Cat"),
+            ("resistance_dog", "Resistance Dog", 1000, "rare", "Resistance%20Dog"),
+            ("durovs_cap", "Durov's Cap", 1200, "rare", "Durov%27s%20Cap"),
+            ("swiss_watch", "Swiss Watch", 1300, "legendary", "Swiss%20Watch"),
+            ("toy_bear", "Toy Bear", 700, "rare", "Toy%20Bear"),
+            ("precious_peach", "Precious Peach", 750, "rare", "Precious%20Peach"),
+            ("liberty_figure", "Liberty Figure", 900, "epic", "Liberty%20Figure"),
+            ("snoop_dogg", "Snoop Dogg", 1000, "epic", "Snoop%20Dogg"),
+            ("vintage_cigar", "Vintage Cigar", 800, "rare", "Vintage%20Cigar"),
+            ("diamond_ring", "Diamond Ring", 850, "epic", "Diamond%20Ring"),
+            ("eternal_rose", "Eternal Rose", 650, "rare", "Eternal%20Rose"),
+            ("jelly_bunny", "Jelly Bunny", 700, "epic", "Jelly%20Bunny"),
+            ("loot_bag", "Loot Bag", 800, "rare", "Loot%20Bag"),
+            ("magic_potion", "Magic Potion", 750, "rare", "Magic%20Potion"),
+            ("kissed_frog", "Kissed Frog", 650, "rare", "Kissed%20Frog"),
+            ("heart_locket", "Heart Locket", 700, "rare", "Heart%20Locket"),
+            ("perfume_bottle", "Perfume Bottle", 900, "epic", "Perfume%20Bottle"),
+            ("heroic_helmet", "Heroic Helmet", 1100, "epic", "Heroic%20Helmet"),
+            ("westside_sign", "Westside Sign", 800, "rare", "Westside%20Sign"),
+            ("crystal_ball_tg", "Crystal Ball", 850, "rare", "Crystal%20Ball"),
+            ("evil_eye", "Evil Eye", 650, "rare", "Evil%20Eye"),
+            ("signet_ring", "Signet Ring", 900, "rare", "Signet%20Ring"),
+            ("genie_lamp", "Genie Lamp", 1200, "epic", "Genie%20Lamp"),
+            ("love_candle", "Love Candle", 700, "rare", "Love%20Candle"),
+        ]
+        selected_codes = [gift[0] for gift in popular_telegram_gifts]
+        placeholders = ",".join(["%s"] * len(selected_codes))
+        c.execute(
+            "UPDATE gift_types SET active=0 WHERE collection_name='Telegram Gifts' "
+            + "AND code NOT IN (" + placeholders + ")",
+            tuple(selected_codes),
+        )
+        for code, title, price, rarity, slug in popular_telegram_gifts:
+            animation_url = "https://cdn.changes.tg/gifts/models/" + slug + "/lottie/Original.json"
+            c.execute("""INSERT INTO gift_types
+                (code,title,description,price,rarity,is_collectible,collection_name,animation_url,active)
+                VALUES(%s,%s,'Telegram collectible gift animation',%s,%s,1,'Telegram Gifts',%s,1)
+                ON CONFLICT(code) DO UPDATE SET
+                    title=EXCLUDED.title,
+                    is_collectible=1,
+                    collection_name='Telegram Gifts',
+                    animation_url=EXCLUDED.animation_url,
+                    active=1""",
+                (code, title, price, rarity, animation_url))
+
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
 

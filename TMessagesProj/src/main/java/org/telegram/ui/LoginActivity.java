@@ -2063,6 +2063,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
 
         public PhoneView(Context context) {
             super(context);
+            freegramLoginMode = activityMode == MODE_LOGIN;
 
             setOrientation(VERTICAL);
             setGravity(Gravity.CENTER);
